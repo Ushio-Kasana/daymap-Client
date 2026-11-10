@@ -538,28 +538,120 @@ fn merge_people(people: &mut Vec<MessagePerson>) {
     *people = merged;
 }
 
+/// Uploads a message attachment through the portal's SAS flow. Daymap names
+/// this purpose differently across portal versions, so try the plain message
+/// purpose and fall back to the older name before giving up.
+pub async fn upload_message_file(
+    http: &Client,
+    api_base: &str,
+    token: &str,
+    student_id: i64,
+    file_name: &str,
+    mime: &str,
+    data: &[u8],
+) -> Result<i64, MessageError> {
+    let portal = PortalClient::new(http.clone(), api_base)?;
+    let query = [
+        ("studentId", student_id.to_string()),
+        ("fileName", file_name.to_string()),
+        ("size", data.len().to_string()),
+    ];
+    let mut sas = portal
+        .get("/lms/api/files/upload/sas/message", token, &query)
+        .await;
+    if let Err(MessageError::Message(text)) = &sas {
+        if text.contains("404") {
+            sas = portal
+                .get("/lms/api/files/upload/sas/messageattachment", token, &query)
+                .await;
+        }
+    }
+    let sas = sas?;
+
+    let failure = |text: &str| MessageError::Message(text.to_string());
+    let account = field_string(&sas, &["account", "Account"])
+        .ok_or_else(|| failure("Daymap didn't return an upload account."))?;
+    let container = field_string(&sas, &["container", "Container"])
+        .ok_or_else(|| failure("Daymap didn't return an upload container."))?;
+    let blob_token = field_string(&sas, &["token", "Token"])
+        .ok_or_else(|| failure("Daymap didn't return an upload token."))?;
+    let storage_path = field_string(&sas, &["storagePath", "StoragePath"])
+        .ok_or_else(|| failure("Daymap didn't return an upload path."))?;
+    let file_id = field_i64(&sas, &["fileId", "FileId", "fileID", "FileID"])
+        .ok_or_else(|| failure("Daymap didn't return the uploaded file's ID."))?;
+
+    let mut base = Url::parse(&format!("https://{account}.blob.core.windows.net/"))
+        .map_err(|_| failure("Couldn't build the upload address."))?;
+    {
+        let mut segments = base
+            .path_segments_mut()
+            .map_err(|_| failure("Couldn't build the upload address."))?;
+        segments.push(&container);
+        for part in storage_path.split('/').filter(|part| !part.is_empty()) {
+            segments.push(part);
+        }
+    }
+    // The SAS token is already URL-encoded, so append it verbatim.
+    let upload_url = Url::parse(&format!(
+        "{}?{}",
+        base.as_str().trim_end_matches('/'),
+        blob_token
+    ))
+    .map_err(|_| failure("Couldn't build the upload address."))?;
+
+    let response = portal
+        .http
+        .put(upload_url)
+        .header("x-ms-blob-type", "BlockBlob")
+        .header("x-ms-version", "2021-12-02")
+        .header("Content-Type", mime)
+        .header("x-ms-blob-content-type", mime)
+        .body(data.to_vec())
+        .timeout(std::time::Duration::from_secs(300))
+        .send()
+        .await
+        .map_err(|_| failure("Couldn't send the file. Check your connection and try again."))?;
+
+    if !response.status().is_success() {
+        return Err(MessageError::Message(format!(
+            "The upload was rejected (HTTP {}).",
+            response.status().as_u16()
+        )));
+    }
+
+    portal
+        .post(
+            "/lms/api/files/upload/success",
+            token,
+            &json!({ "fileId": file_id }),
+        )
+        .await?;
+    Ok(file_id)
+}
+
 pub async fn send_new(
     http: &Client,
     api_base: &str,
     token: &str,
     text: &str,
     contact_ids: &[i64],
+    attachment_ids: &[i64],
 ) -> Result<(), MessageError> {
     let portal = PortalClient::new(http.clone(), api_base)?;
+    let mut payload = json!({
+        "body": text,
+        "threadID": Value::Null,
+        "replyAll": false,
+        "properties": {},
+        "messageType": 10,
+        "contactIds": contact_ids,
+        "subject": ""
+    });
+    if !attachment_ids.is_empty() {
+        payload["attachmentIds"] = json!(attachment_ids);
+    }
     let draft = portal
-        .post(
-            "/lms/api/coms/message/create",
-            token,
-            &json!({
-                "body": text,
-                "threadID": Value::Null,
-                "replyAll": false,
-                "properties": {},
-                "messageType": 10,
-                "contactIds": contact_ids,
-                "subject": ""
-            }),
-        )
+        .post("/lms/api/coms/message/create", token, &payload)
         .await?;
     let message_id = field_i64(&draft, &["MessageID", "ID"]).ok_or_else(|| {
         MessageError::Message("Daymap didn't return the created message.".to_string())
@@ -586,24 +678,23 @@ pub async fn send_reply(
     token: &str,
     text: &str,
     message_id: i64,
+    attachment_ids: &[i64],
 ) -> Result<(), MessageError> {
     let client = ApiClient::new(
         http.clone(),
         session.api_base.clone(),
         session.client_id.clone(),
     )?;
-    let value = client
-        .post(
-            "messages",
-            token,
-            &json!({
-                "threadId": message_id,
-                "text": text,
-                "messageType": 10,
-                "replyAll": false
-            }),
-        )
-        .await?;
+    let mut payload = json!({
+        "threadId": message_id,
+        "text": text,
+        "messageType": 10,
+        "replyAll": false
+    });
+    if !attachment_ids.is_empty() {
+        payload["attachmentIds"] = json!(attachment_ids);
+    }
+    let value = client.post("messages", token, &payload).await?;
     let sent_id = field_i64(&value, &["MessageID", "ID"])
         .ok_or_else(|| MessageError::Message("Daymap didn't return a message ID.".to_string()))?;
     client

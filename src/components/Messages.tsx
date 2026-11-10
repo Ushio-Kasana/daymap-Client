@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { errorText, invoke, listen, openExternal } from "../api";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   formatFullStamp,
   formatRelativeShort,
@@ -20,6 +21,11 @@ const DEFAULT_FOLDERS: MessageFolder[] = [
   { id: "3", title: "Archived", folderType: 1, itemCount: 0 },
   { id: "10", title: "Email and SMS", folderType: 10, itemCount: 0 },
 ];
+
+interface Attachment {
+  id: number;
+  name: string;
+}
 
 interface MessagesProps {
   dashboard: Dashboard;
@@ -368,6 +374,8 @@ export function MessageDetail({
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attaching, setAttaching] = useState(false);
 
   useEffect(() => {
     setReplyText("");
@@ -389,14 +397,44 @@ export function MessageDetail({
     );
   };
 
+  const attach = async () => {
+    if (demo || attaching) return;
+    setSendError(null);
+    try {
+      const picked = await openDialog({
+        multiple: true,
+        directory: false,
+        title: "Attach files",
+      });
+      const paths = Array.isArray(picked) ? picked : picked ? [picked] : [];
+      if (paths.length === 0) return;
+      setAttaching(true);
+      const next = [...attachments];
+      for (const path of paths) {
+        const id = await invoke<number>("upload_message_attachment", { path });
+        next.push({ id, name: path.split(/[\\/]/).pop() ?? "Attachment" });
+        setAttachments([...next]);
+      }
+    } catch (cause) {
+      setSendError(errorText(cause));
+    } finally {
+      setAttaching(false);
+    }
+  };
+
   const sendReply = async () => {
     const clean = replyText.trim();
-    if (!clean || !onRefresh || sending) return;
+    if ((!clean && attachments.length === 0) || !onRefresh || sending) return;
     setSending(true);
     setSendError(null);
     try {
-      await invoke("send_reply", { text: clean, messageId: message.id });
+      await invoke("send_reply", {
+        text: clean,
+        messageId: message.id,
+        attachmentIds: attachments.map((file) => file.id),
+      });
       setReplyText("");
+      setAttachments([]);
       onRefresh();
     } catch (cause) {
       setSendError(errorText(cause));
@@ -475,6 +513,33 @@ export function MessageDetail({
             placeholder="Write a reply…"
             aria-label="Reply text"
           />
+          <div className="attach-row">
+            <button
+              type="button"
+              className="link-button attach-button"
+              onClick={() => void attach()}
+              disabled={demo || attaching}
+            >
+              <Icon name="paperclip" size={13} />
+              <span>{attaching ? "Uploading…" : "Attach files"}</span>
+            </button>
+            {attachments.map((file) => (
+              <span key={file.id} className="attachment-chip">
+                {file.name}
+                <button
+                  type="button"
+                  aria-label={`Remove ${file.name}`}
+                  onClick={() =>
+                    setAttachments((current) =>
+                      current.filter((item) => item.id !== file.id),
+                    )
+                  }
+                >
+                  <Icon name="close" size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
           {sendError && (
             <div className="inline-error">
               <Icon name="warning" size={13} />
@@ -487,7 +552,7 @@ export function MessageDetail({
               type="button"
               className="small-primary"
               onClick={() => void sendReply()}
-              disabled={demo || sending || !replyText.trim()}
+              disabled={demo || sending || (!replyText.trim() && attachments.length === 0)}
             >
               {sending ? "Sending…" : "Send Reply"}
             </button>
@@ -517,6 +582,8 @@ function ComposeModal({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [peopleVersion, setPeopleVersion] = useState(0);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attaching, setAttaching] = useState(false);
 
   useEffect(() => {
     if (demo) return;
@@ -569,8 +636,36 @@ function ComposeModal({
     setResults([]);
   };
 
+  const attach = async () => {
+    if (demo || attaching) return;
+    setError(null);
+    try {
+      const picked = await openDialog({
+        multiple: true,
+        directory: false,
+        title: "Attach files",
+      });
+      const paths = Array.isArray(picked) ? picked : picked ? [picked] : [];
+      if (paths.length === 0) return;
+      setAttaching(true);
+      const next = [...attachments];
+      for (const path of paths) {
+        const id = await invoke<number>("upload_message_attachment", { path });
+        next.push({ id, name: path.split(/[\\/]/).pop() ?? "Attachment" });
+        setAttachments([...next]);
+      }
+    } catch (cause) {
+      setError(errorText(cause));
+    } finally {
+      setAttaching(false);
+    }
+  };
+
   const canSend =
-    !sending && !demo && recipients.length > 0 && text.trim().length > 0;
+    !sending &&
+    !demo &&
+    recipients.length > 0 &&
+    (text.trim().length > 0 || attachments.length > 0);
 
   const send = async () => {
     if (!canSend) return;
@@ -580,6 +675,7 @@ function ComposeModal({
       await invoke("send_new_message", {
         text: text.trim(),
         contactIds: recipients.map((recipient) => recipient.id),
+        attachmentIds: attachments.map((file) => file.id),
       });
       onSent();
     } catch (cause) {
@@ -691,6 +787,34 @@ function ComposeModal({
             onChange={(event) => setText(event.target.value)}
             placeholder="Write your message…"
           />
+
+          <div className="attach-row">
+            <button
+              type="button"
+              className="link-button attach-button"
+              onClick={() => void attach()}
+              disabled={demo || attaching}
+            >
+              <Icon name="paperclip" size={13} />
+              <span>{attaching ? "Uploading…" : "Attach files"}</span>
+            </button>
+            {attachments.map((file) => (
+              <span key={file.id} className="attachment-chip">
+                {file.name}
+                <button
+                  type="button"
+                  aria-label={`Remove ${file.name}`}
+                  onClick={() =>
+                    setAttachments((current) =>
+                      current.filter((item) => item.id !== file.id),
+                    )
+                  }
+                >
+                  <Icon name="close" size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
 
           {error && (
             <div className="inline-error">

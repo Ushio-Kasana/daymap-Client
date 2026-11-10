@@ -9,7 +9,7 @@ use assignments::{download_assignment_file, load_assignment, upload_assignment_f
 use auth::{
     begin_sign_in, cancel_sign_in, load_dashboard, load_folder_messages, load_message_folders,
     load_message_recipients, open_auth_window, open_external, restore_session, search_contacts,
-    send_new_message, send_reply, sign_out, sync_mailbox, AppState,
+    send_new_message, send_reply, sign_out, sync_mailbox, upload_message_attachment, AppState,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -34,7 +34,8 @@ pub fn run() {
             open_external,
             load_assignment,
             download_assignment_file,
-            upload_assignment_file
+            upload_assignment_file,
+            upload_message_attachment
         ])
         .run(tauri::generate_context!())
         .expect("error while running Daymap");

@@ -269,7 +269,7 @@ fn student_id(session: &crate::models::StoredSession) -> Result<i64, MessageErro
         .ok_or_else(|| failure("Daymap didn't return a student ID for this account."))
 }
 
-fn guess_mime(file_name: &str) -> String {
+pub(crate) fn guess_mime(file_name: &str) -> String {
     let extension = Path::new(file_name)
         .extension()
         .map(|value| value.to_string_lossy().to_lowercase())

@@ -3227,3 +3227,41 @@ code {
 .notice-line.success {
   color: var(--success);
 }
+
+/* Message attachments */
+.attach-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.attach-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+}
+
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  padding: 4px 8px;
+  border: 1px solid var(--line, #dde3ee);
+  border-radius: 999px;
+  background: var(--surface-raised, #eef1f7);
+  font-size: 11.5px;
+}
+
+.attachment-chip > button {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}

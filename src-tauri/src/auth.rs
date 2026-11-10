@@ -497,10 +497,11 @@ async fn sync_mailbox_inner(app: &AppHandle, state: &AppState) -> Result<(), Str
 pub async fn send_new_message(
     text: String,
     contact_ids: Vec<i64>,
+    attachment_ids: Vec<i64>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let text = text.trim().to_string();
-    if text.is_empty() || contact_ids.is_empty() {
+    if (text.is_empty() && attachment_ids.is_empty()) || contact_ids.is_empty() {
         return Err("Choose a recipient and write a message first.".to_string());
     }
     let http = state.http.clone();
@@ -508,8 +509,17 @@ pub async fn send_new_message(
         let http = http.clone();
         let text = text.clone();
         let contact_ids = contact_ids.clone();
+        let attachment_ids = attachment_ids.clone();
         async move {
-            messages::send_new(&http, &session.api_base, &token, &text, &contact_ids).await
+            messages::send_new(
+                &http,
+                &session.api_base,
+                &token,
+                &text,
+                &contact_ids,
+                &attachment_ids,
+            )
+            .await
         }
     })
     .await
@@ -519,17 +529,81 @@ pub async fn send_new_message(
 pub async fn send_reply(
     text: String,
     message_id: i64,
+    attachment_ids: Vec<i64>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let text = text.trim().to_string();
-    if text.is_empty() {
+    if text.is_empty() && attachment_ids.is_empty() {
         return Err("Write a reply first.".to_string());
     }
     let http = state.http.clone();
     with_authenticated(state.inner(), move |session, token| {
         let http = http.clone();
         let text = text.clone();
-        async move { messages::send_reply(&http, &session, &token, &text, message_id).await }
+        let attachment_ids = attachment_ids.clone();
+        async move {
+            messages::send_reply(
+                &http,
+                &session,
+                &token,
+                &text,
+                message_id,
+                &attachment_ids,
+            )
+            .await
+        }
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn upload_message_attachment(
+    path: String,
+    mime: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<i64, String> {
+    let file_name = std::path::Path::new(&path)
+        .file_name()
+        .map(|value| value.to_string_lossy().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "That file has no name.".to_string())?;
+    let data = std::fs::read(&path)
+        .map_err(|error| format!("Couldn't read the selected file: {error}"))?;
+    if data.is_empty() {
+        return Err("The selected file is empty.".to_string());
+    }
+    let mime = mime
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| crate::assignments::guess_mime(&file_name));
+
+    let http = state.http.clone();
+    with_authenticated(state.inner(), move |session, token| {
+        let http = http.clone();
+        let file_name = file_name.clone();
+        let mime = mime.clone();
+        let data = data.clone();
+        async move {
+            let student_id = session
+                .user
+                .daymap_id
+                .filter(|id| *id > 0)
+                .ok_or_else(|| {
+                    crate::messages::MessageError::Message(
+                        "Daymap didn't return a student ID for this account.".to_string(),
+                    )
+                })?;
+            messages::upload_message_file(
+                &http,
+                &session.api_base,
+                &token,
+                student_id,
+                &file_name,
+                &mime,
+                &data,
+            )
+            .await
+        }
     })
     .await
 }
