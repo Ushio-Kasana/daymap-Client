@@ -8,8 +8,18 @@ on:
         required: false
         type: string
   push:
+    branches:
+      - main
+      - testing
     tags:
       - "v*"
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: desktop-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
