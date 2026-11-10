@@ -161,36 +161,49 @@ export function createDemoDashboard(): Dashboard {
     return `${first} ${last.toUpperCase()}`;
   };
 
-  const diary: DiaryItem[] = classes.flatMap((schoolClass, index) => [
-    {
-      id: 6000 + index * 2,
-      title: `Home Group ${index + 1}`,
-      start: at(0, 8, 45),
-      finish: at(0, 8, 55),
-      calendar: "Class Lessons",
-      attendanceStatus: 2,
-      room: "HG",
-      teacherName: teachers[index],
-      type: 2,
-    },
-    {
-      id: 6001 + index * 2,
-      title: schoolClass.name,
-      start: at(0, 9 + index, 0),
-      finish: at(0, 10 + index, 0),
-      calendar: "Class Lessons",
-      attendanceStatus: Math.random() < 0.2 ? 3 : 2,
-      attendanceReason: Math.random() < 0.2 ? pick(ATTENDANCE_NOTES) : null,
-      room: ROOMS[index % ROOMS.length],
-      teacherName: teachers[index],
-      substituteName: index === 1 ? teachers[(index + 3) % teachers.length] : null,
-      type: 2,
-      text:
-        Math.random() < 0.4
-          ? "<div class='lptitle'><a href='/daymap/attachment.ashx?ID=100000'>Lesson handout</a></div>"
-          : null,
-    },
-  ]);
+  // Five weeks of invented lessons so the timetable can be browsed backwards as
+  // well as forwards in the signed-out preview.
+  const diary: DiaryItem[] = [];
+  for (let offset = -21; offset <= 13; offset += 1) {
+    const date = new Date();
+    date.setDate(date.getDate() + offset);
+    const weekday = date.getDay();
+    if (weekday === 0 || weekday === 6) continue;
+    const past = offset < 0;
+
+    classes.forEach((schoolClass, index) => {
+      const baseId = 20_000 + (offset + 21) * 20 + index * 2;
+      diary.push({
+        id: baseId,
+        title: `Home Group ${index + 1}`,
+        start: at(offset, 8, 45),
+        finish: at(offset, 8, 55),
+        calendar: "Class Lessons",
+        attendanceStatus: past ? 2 : null,
+        room: "HG",
+        teacherName: teachers[index],
+        type: 2,
+      });
+      diary.push({
+        id: baseId + 1,
+        title: schoolClass.name,
+        start: at(offset, 9 + index, 0),
+        finish: at(offset, 10 + index, 0),
+        calendar: "Class Lessons",
+        attendanceStatus: past ? (Math.random() < 0.2 ? 3 : 2) : null,
+        attendanceReason: past && Math.random() < 0.2 ? pick(ATTENDANCE_NOTES) : null,
+        room: ROOMS[index % ROOMS.length],
+        teacherName: teachers[index],
+        substituteName:
+          index === 1 && offset >= 0 ? teachers[(index + 3) % teachers.length] : null,
+        type: 2,
+        text:
+          Math.random() < 0.4
+            ? "<div class='lptitle'><a href='/daymap/attachment.ashx?ID=100000'>Lesson handout</a></div>"
+            : null,
+      });
+    });
+  }
 
   const tasks: AssessmentTask[] = classes.map((schoolClass, index) =>
     task(

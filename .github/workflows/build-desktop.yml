@@ -69,6 +69,26 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # The certificate is self-signed, so Gatekeeper still warns on first launch.
+      # It keeps the app signature stable across releases so the saved-session
+      # keychain item can be allowed once and then reused.
+      - name: Import macOS signing certificate
+        if: matrix.platform == 'macos-latest'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security list-keychains -d user -s "$PWD/build.keychain" "$HOME/Library/Keychains/login.keychain-db"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          rm -f certificate.p12
+
       - name: Prepare release notes
         if: env.RELEASE_TAG != ''
         id: release_notes
@@ -94,6 +114,7 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_SIGNING_IDENTITY: ${{ matrix.platform == 'macos-latest' && 'Daymap Local Signing' || '' }}
           # Tauri skips its Finder layout on CI by default. Keep it enabled so
           # the custom DMG background, icon positions and 128 px icons are applied.
           TAURI_BUNDLER_DMG_IGNORE_CI: "true"

@@ -98,6 +98,24 @@ export default function App() {
     }
   }, [demo]);
 
+  // Paint the saved dashboard first, then let the refresh replace it with
+  // current data so signing in doesn't sit on a blank screen.
+  useEffect(() => {
+    if (!user || demo || dashboard || !isTauri()) return;
+    let cancelled = false;
+    void invoke<Dashboard | null>("load_cached_dashboard")
+      .then((cached) => {
+        if (cancelled || !cached) return;
+        setDashboard((current) => current ?? cached);
+      })
+      .catch(() => {
+        // A missing cache is normal on a first run.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, demo, dashboard]);
+
   useEffect(() => {
     if (!user || demo) return;
     void refresh();

@@ -1,4 +1,7 @@
-use crate::models::{Dashboard, DaymapMessage, DaymapUser, MessageFolder, MessagePerson};
+use crate::models::{
+    AssignmentBundle, Dashboard, DaymapMessage, DaymapUser, DiaryItem, MessageFolder, MessagePerson,
+};
+use chrono::{Datelike, Duration as ChronoDuration, NaiveDate};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -14,6 +17,13 @@ static CACHE_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct CachedWeek {
+    saved_at: String,
+    lessons: Vec<DiaryItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct OfflineCache {
     version: u32,
     #[serde(default)]
@@ -26,6 +36,10 @@ struct OfflineCache {
     people: Vec<MessagePerson>,
     thread_people: HashMap<String, Vec<MessagePerson>>,
     mailbox_synced_at: Option<i64>,
+    #[serde(default)]
+    diary_weeks: HashMap<String, CachedWeek>,
+    #[serde(default)]
+    assignments: HashMap<String, AssignmentBundle>,
 }
 
 impl OfflineCache {
@@ -41,6 +55,8 @@ impl OfflineCache {
             people: Vec::new(),
             thread_people: HashMap::new(),
             mailbox_synced_at: None,
+            diary_weeks: HashMap::new(),
+            assignments: HashMap::new(),
         }
     }
 }
@@ -86,6 +102,117 @@ pub fn save_dashboard(
     update(app, user, |cache| {
         cache.dashboard = Some(dashboard.clone());
     })
+}
+
+pub fn save_diary_week(
+    app: &AppHandle,
+    user: &DaymapUser,
+    week_start: &str,
+    lessons: &[DiaryItem],
+) -> Result<(), String> {
+    let key = week_start.to_string();
+    let week = CachedWeek {
+        saved_at: chrono::Utc::now().to_rfc3339(),
+        lessons: lessons.to_vec(),
+    };
+    update(app, user, |cache| {
+        cache.diary_weeks.insert(key.clone(), week.clone());
+    })
+}
+
+pub fn diary_week(app: &AppHandle, user: &DaymapUser, week_start: &str) -> Option<Vec<DiaryItem>> {
+    read(app, user)
+        .diary_weeks
+        .get(week_start)
+        .map(|week| week.lessons.clone())
+}
+
+/// Stores the weeks that the dashboard response covers completely, so the
+/// timetable can open them without another round trip. Weeks that are only
+/// partly covered are skipped to avoid caching an incomplete timetable.
+pub fn save_dashboard_weeks(
+    app: &AppHandle,
+    user: &DaymapUser,
+    lessons: &[DiaryItem],
+    from: &str,
+    to: &str,
+) -> Result<(), String> {
+    let Some(from) = NaiveDate::parse_from_str(from, "%Y-%m-%d").ok() else {
+        return Ok(());
+    };
+    let Some(to) = NaiveDate::parse_from_str(to, "%Y-%m-%d").ok() else {
+        return Ok(());
+    };
+
+    let mut groups: HashMap<String, Vec<DiaryItem>> = HashMap::new();
+    for lesson in lessons {
+        if let Some(key) = lesson_week_key(lesson) {
+            groups.entry(key).or_default().push(lesson.clone());
+        }
+    }
+
+    let mut monday = from - ChronoDuration::days(from.weekday().num_days_from_monday() as i64);
+    while monday < from {
+        monday += ChronoDuration::days(7);
+    }
+    let mut covered = Vec::new();
+    while monday + ChronoDuration::days(6) <= to {
+        covered.push(monday.format("%Y-%m-%d").to_string());
+        monday += ChronoDuration::days(7);
+    }
+    if covered.is_empty() {
+        return Ok(());
+    }
+
+    let saved_at = chrono::Utc::now().to_rfc3339();
+    update(app, user, |cache| {
+        for key in &covered {
+            let lessons = groups.remove(key).unwrap_or_default();
+            cache.diary_weeks.insert(
+                key.clone(),
+                CachedWeek {
+                    saved_at: saved_at.clone(),
+                    lessons,
+                },
+            );
+        }
+    })
+}
+
+pub fn save_assignment(
+    app: &AppHandle,
+    user: &DaymapUser,
+    task_id: i64,
+    bundle: &AssignmentBundle,
+) -> Result<(), String> {
+    let key = task_id.to_string();
+    let bundle = bundle.clone();
+    update(app, user, |cache| {
+        cache.assignments.insert(key.clone(), bundle.clone());
+    })
+}
+
+pub fn assignment(app: &AppHandle, user: &DaymapUser, task_id: i64) -> Option<AssignmentBundle> {
+    read(app, user).assignments.get(&task_id.to_string()).cloned()
+}
+
+pub fn clear(app: &AppHandle) -> Result<(), String> {
+    let _guard = CACHE_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let Some(path) = cache_path(app) else {
+        return Ok(());
+    };
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("Couldn't clear offline data: {error}")),
+    }
+}
+
+fn lesson_week_key(lesson: &DiaryItem) -> Option<String> {
+    let start = lesson.start.as_deref()?;
+    let date = NaiveDate::parse_from_str(start.get(0..10)?, "%Y-%m-%d").ok()?;
+    let monday = date - ChronoDuration::days(date.weekday().num_days_from_monday() as i64);
+    Some(monday.format("%Y-%m-%d").to_string())
 }
 
 pub fn folders(app: &AppHandle, user: &DaymapUser) -> Vec<MessageFolder> {

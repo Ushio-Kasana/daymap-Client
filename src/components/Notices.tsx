@@ -8,7 +8,15 @@ import { Icon } from "../icons";
 import type { Dashboard, DaymapMessage } from "../types";
 import { MessageDetail } from "./Messages";
 
-export function Notices({ dashboard, demo }: { dashboard: Dashboard; demo: boolean }) {
+export function Notices({
+  dashboard,
+  demo,
+  obtaining,
+}: {
+  dashboard: Dashboard;
+  demo: boolean;
+  obtaining: boolean;
+}) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -32,8 +40,12 @@ export function Notices({ dashboard, demo }: { dashboard: Dashboard; demo: boole
           {dashboard.notices.length === 0 ? (
             <div className="empty-state small message-empty">
               <Icon name="notices" size={31} />
-              <strong>No notices yet</strong>
-              <span>Bulletins and announcements from your school will appear here.</span>
+              <strong>{obtaining ? "Obtaining notices…" : "No notices yet"}</strong>
+              <span>
+                {obtaining
+                  ? "Daymap is still loading school notices."
+                  : "Bulletins and announcements from your school will appear here."}
+              </span>
             </div>
           ) : (
             dashboard.notices.map((notice) => (

@@ -1939,6 +1939,32 @@ code {
   font-size: 10.5px;
 }
 
+.timetable-loading-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(46, 102, 222, 0.22);
+  border-radius: 9px;
+  background: rgba(46, 102, 222, 0.06);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 560;
+  padding: 9px 12px;
+}
+
+.obtaining-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid rgba(46, 102, 222, 0.18);
+  background: rgba(46, 102, 222, 0.06);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 560;
+  padding: 7px 23px;
+}
+
 .timetable-actions {
   display: flex;
   align-items: center;
@@ -3287,6 +3313,44 @@ code {
 .settings-row span {
   color: var(--muted);
   font-size: 9.5px;
+}
+
+.touch-id-switch {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  width: 38px;
+  height: 22px;
+  appearance: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--field);
+  padding: 2px;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.touch-id-switch span {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--subtle);
+  transition: transform 140ms ease, background 140ms ease;
+}
+
+.touch-id-switch.on {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.touch-id-switch.on span {
+  background: #fff;
+  transform: translateX(16px);
+}
+
+.touch-id-switch:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .settings-select {

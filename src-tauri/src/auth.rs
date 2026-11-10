@@ -1,14 +1,18 @@
-use crate::api::{fetch_dashboard, ApiClient, ApiError};
+use crate::api::{fetch_dashboard, fetch_diary, ApiClient, ApiError};
 use crate::cache;
 use crate::messages::{self, MessageError};
-use crate::models::{Dashboard, DaymapUser, DiscoverInfo, MessageFolder, MessagePerson, StoredSession};
+use crate::models::{
+    Dashboard, DaymapUser, DiaryItem, DiscoverInfo, MessageFolder, MessagePerson, StoredSession,
+};
 use std::future::Future;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use chrono::Utc;
+use chrono::{Datelike, NaiveDate, Utc};
 use rand::{rngs::OsRng, RngCore};
 use reqwest::Client;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::fs;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -196,9 +200,26 @@ pub async fn restore_session(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Option<DaymapUser>, String> {
+    if touch_id_setting_enabled(&app)
+        && session_marker_path(&app).is_some_and(|path| path.exists())
+    {
+        let unlock = tokio::task::spawn_blocking(crate::touch_id::unlock_if_available)
+            .await
+            .unwrap_or(crate::touch_id::Unlock::Locked);
+        if unlock == crate::touch_id::Unlock::Locked {
+            let _ = app.emit(
+                AUTH_ERROR_EVENT,
+                "Touch ID didn't unlock Daymap. Sign in to continue.",
+            );
+            return Ok(None);
+        }
+    }
+
     let Some(mut session) = load_session() else {
+        clear_session_marker(&app);
         return Ok(None);
     };
+    mark_session_saved(&app);
 
     if session.expires_at <= Utc::now().timestamp() + 60 {
         if session.refresh_token.is_some() {
@@ -266,6 +287,8 @@ pub async fn load_dashboard(
         Ok(mut dashboard) => {
             dashboard.offline = false;
             let _ = cache::save_dashboard(&app, &session.user, &dashboard);
+            let (from, to) = crate::api::diary_window();
+            let _ = cache::save_dashboard_weeks(&app, &session.user, &dashboard.diary, &from, &to);
             Ok(dashboard)
         }
         Err(error) => {
@@ -275,6 +298,89 @@ pub async fn load_dashboard(
             Err(error.to_string())
         }
     }
+}
+
+#[tauri::command]
+pub fn load_cached_dashboard(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<Dashboard>, String> {
+    let user = current_user(&state).ok_or_else(|| "You are not signed in.".to_string())?;
+    Ok(cache::load_dashboard(&app, &user))
+}
+
+#[tauri::command]
+pub fn cached_timetable_week(
+    app: AppHandle,
+    from: String,
+    state: State<'_, AppState>,
+) -> Result<Option<Vec<DiaryItem>>, String> {
+    let date = parse_timetable_day(&from)?;
+    let week = week_start(date).format("%Y-%m-%d").to_string();
+    let user = current_user(&state).ok_or_else(|| "You are not signed in.".to_string())?;
+    Ok(cache::diary_week(&app, &user, &week))
+}
+
+#[tauri::command]
+pub fn reset_cache(app: AppHandle) -> Result<(), String> {
+    cache::clear(&app)
+}
+
+#[tauri::command]
+pub async fn load_timetable(
+    app: AppHandle,
+    from: String,
+    to: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<DiaryItem>, String> {
+    let from_date = parse_timetable_day(&from)?;
+    let to_date = parse_timetable_day(&to)?;
+    if to_date < from_date {
+        return Err("That timetable date range is invalid.".to_string());
+    }
+    if (to_date - from_date).num_days() > 31 {
+        return Err("That timetable date range is too long.".to_string());
+    }
+
+    let week = week_start(from_date).format("%Y-%m-%d").to_string();
+    let user = current_user(&state).ok_or_else(|| "You are not signed in.".to_string())?;
+    let from = from_date.format("%Y-%m-%d").to_string();
+    let to = to_date.format("%Y-%m-%d").to_string();
+    let http = state.http.clone();
+    let result = with_authenticated(state.inner(), move |session, token| {
+        let http = http.clone();
+        let from = from.clone();
+        let to = to.clone();
+        async move {
+            let client =
+                ApiClient::new(http, session.api_base.clone(), session.client_id.clone())?;
+            fetch_diary(&client, &token, &from, &to)
+                .await
+                .map_err(MessageError::from)
+        }
+    })
+    .await;
+
+    match result {
+        Ok(lessons) => {
+            let _ = cache::save_diary_week(&app, &user, &week, &lessons);
+            Ok(lessons)
+        }
+        // A cached week keeps the timetable readable when Daymap is unreachable.
+        Err(error) => match cache::diary_week(&app, &user, &week) {
+            Some(lessons) => Ok(lessons),
+            None => Err(error),
+        },
+    }
+}
+
+fn week_start(date: NaiveDate) -> NaiveDate {
+    date - chrono::Duration::days(date.weekday().num_days_from_monday() as i64)
+}
+
+fn parse_timetable_day(value: &str) -> Result<NaiveDate, String> {
+    NaiveDate::parse_from_str(value.trim(), "%Y-%m-%d")
+        .map_err(|_| "That timetable date wasn't valid.".to_string())
 }
 
 #[tauri::command]
@@ -617,6 +723,7 @@ pub fn sign_out(app: AppHandle, state: State<'_, AppState>) {
         guard.pending = None;
     }
     delete_session();
+    clear_session_marker(&app);
     close_auth_window(&app);
 }
 
@@ -698,8 +805,11 @@ async fn finish_sign_in(app: AppHandle, pending: PendingAuth, code: String) {
             user: user.clone(),
         };
 
-        if let Err(error) = save_session(&session) {
-            eprintln!("Daymap session was not persisted to the OS keychain: {error}");
+        match save_session(&session) {
+            Ok(()) => mark_session_saved(&app),
+            Err(error) => {
+                eprintln!("Daymap session was not persisted to the OS keychain: {error}")
+            }
         }
         {
             let state = app.state::<AppState>();
@@ -1071,6 +1181,64 @@ fn close_auth_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(AUTH_WINDOW_LABEL) {
         let _ = window.close();
     }
+}
+
+fn session_marker_path(app: &AppHandle) -> Option<PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|directory| directory.join("session.present"))
+}
+
+/// Record that a session exists without storing anything sensitive. The marker
+/// only decides whether reopening the app should ask for Touch ID first.
+fn mark_session_saved(app: &AppHandle) {
+    let Some(path) = session_marker_path(app) else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let _ = fs::write(path, b"1");
+}
+
+fn clear_session_marker(app: &AppHandle) {
+    if let Some(path) = session_marker_path(app) {
+        let _ = fs::remove_file(path);
+    }
+}
+
+fn touch_id_setting_path(app: &AppHandle) -> Option<PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|directory| directory.join("touch-id.enabled"))
+}
+
+/// Touch ID is on unless the user explicitly turned it off. A missing or
+/// unreadable setting must never make the app skip the OS unlock by accident.
+fn touch_id_setting_enabled(app: &AppHandle) -> bool {
+    touch_id_setting_path(app)
+        .and_then(|path| fs::read_to_string(path).ok())
+        .map(|value| value.trim() != "0")
+        .unwrap_or(true)
+}
+
+#[tauri::command]
+pub fn touch_id_enabled(app: AppHandle) -> bool {
+    touch_id_setting_enabled(&app)
+}
+
+#[tauri::command]
+pub fn set_touch_id_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let path = touch_id_setting_path(&app)
+        .ok_or_else(|| "Couldn't find Daymap's settings folder.".to_string())?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Couldn't save the Touch ID setting: {error}"))?;
+    }
+    fs::write(path, if enabled { b"1" } else { b"0" })
+        .map_err(|error| format!("Couldn't save the Touch ID setting: {error}"))
 }
 
 fn keyring_entry() -> Result<keyring::Entry, String> {

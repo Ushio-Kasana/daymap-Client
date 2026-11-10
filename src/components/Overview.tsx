@@ -23,9 +23,10 @@ import { Icon, type IconName } from "../icons";
 interface OverviewProps {
   dashboard: Dashboard;
   goTo: (section: Section) => void;
+  obtaining: boolean;
 }
 
-export function Overview({ dashboard, goTo }: OverviewProps) {
+export function Overview({ dashboard, goTo, obtaining }: OverviewProps) {
   const today = new Date();
   const upcoming = sortTasksByDue(
     dashboard.tasks.filter((task) => !taskIsComplete(task) && !taskIsOverdue(task)),
@@ -86,7 +87,9 @@ export function Overview({ dashboard, goTo }: OverviewProps) {
 
       <div className="overview-columns">
         <Card title="Up next" actionLabel="View all" onAction={() => goTo("tasks")}>
-          {upcoming.length === 0 ? (
+          {obtaining && upcoming.length === 0 ? (
+            <p className="empty-copy">Obtaining tasks…</p>
+          ) : upcoming.length === 0 ? (
             <p className="empty-copy">
               {overdue.length === 0
                 ? "No upcoming tasks. Enjoy the break."
@@ -104,7 +107,9 @@ export function Overview({ dashboard, goTo }: OverviewProps) {
         </Card>
 
         <Card title="Today" actionLabel="Timetable" onAction={() => goTo("timetable")}>
-          {todayLessons.length === 0 ? (
+          {obtaining && todayLessons.length === 0 ? (
+            <p className="empty-copy">Obtaining lessons…</p>
+          ) : todayLessons.length === 0 ? (
             <p className="empty-copy">No lessons scheduled today.</p>
           ) : (
             <div className="lesson-compact-list">
@@ -123,7 +128,9 @@ export function Overview({ dashboard, goTo }: OverviewProps) {
       </div>
 
       <Card title="Latest messages" actionLabel="Inbox" onAction={() => goTo("messages")}>
-        {dashboard.messages.length === 0 ? (
+        {obtaining && dashboard.messages.length === 0 ? (
+          <p className="empty-copy">Obtaining messages…</p>
+        ) : dashboard.messages.length === 0 ? (
           <p className="empty-copy">No messages yet.</p>
         ) : (
           <div className="message-list">

@@ -191,6 +191,15 @@ pub(crate) fn error_message(text: &str, status: StatusCode) -> String {
     }
 }
 
+/// The diary range that ships with the dashboard: today plus the next two weeks.
+pub fn diary_window() -> (String, String) {
+    let today = Local::now().date_naive();
+    (
+        today.format("%Y-%m-%d").to_string(),
+        (today + Duration::days(13)).format("%Y-%m-%d").to_string(),
+    )
+}
+
 pub async fn fetch_dashboard(
     client: &ApiClient,
     user: &DaymapUser,
@@ -199,8 +208,7 @@ pub async fn fetch_dashboard(
     let today = Local::now().date_naive();
     let year_start = format!("{}-01-01", today.format("%Y"));
     let year_end = format!("{}-12-31", today.format("%Y"));
-    let diary_from = today.format("%Y-%m-%d").to_string();
-    let diary_to = (today + Duration::days(13)).format("%Y-%m-%d").to_string();
+    let (diary_from, diary_to) = diary_window();
     let student_id = user.daymap_id.unwrap_or(0);
 
     let assessment_query = [
@@ -217,10 +225,6 @@ pub async fn fetch_dashboard(
         ("msgsPerPage", "200".to_string()),
         ("unreadOnly", "false".to_string()),
     ];
-    let diary_query = [
-        ("from", diary_from),
-        ("to", diary_to),
-    ];
 
     let all_future = client.get("assessment", token, &assessment_query);
     let active_future = async {
@@ -234,7 +238,7 @@ pub async fn fetch_dashboard(
     };
     let messages_future = client.get("messages/folder", token, &message_query);
     let notices_future = client.get("messages/schoolcoms", token, &[]);
-    let diary_future = client.get("calendar/diaryitems", token, &diary_query);
+    let diary_future = fetch_diary(client, token, &diary_from, &diary_to);
 
     let (all, active, messages, notices, diary) = tokio::join!(
         all_future,
@@ -257,16 +261,11 @@ pub async fn fetch_dashboard(
         Err(_) => Value::Array(Vec::new()),
     };
     let diary = diary?;
-    let diary_items = array_items(diary, &["Items", "DiaryItems"]);
-    let diary_details = fetch_lesson_details(client, token, &diary_items).await;
-    let diary_items = merge_lesson_details(diary_items, &diary_details);
 
     let mut tasks = normalize_tasks(array_items(all, &["Tasks", "Assessments"]));
     let active_tasks = normalize_tasks(array_items(active, &["Tasks", "Assessments"]));
     let known: std::collections::HashSet<i64> = tasks.iter().map(|task| task.id).collect();
     tasks.extend(active_tasks.into_iter().filter(|task| !known.contains(&task.id)));
-
-    let diary = normalize_diary(diary_items);
 
     Ok(Dashboard {
         user: user.clone(),
@@ -277,6 +276,21 @@ pub async fn fetch_dashboard(
         fetched_at: chrono::Utc::now().to_rfc3339(),
         offline: false,
     })
+}
+
+/// Loads the diary (lessons and events) for one date range, including the
+/// room, teacher and substitute details that only the per-lesson endpoint has.
+pub async fn fetch_diary(
+    client: &ApiClient,
+    token: &str,
+    from: &str,
+    to: &str,
+) -> Result<Vec<DiaryItem>, ApiError> {
+    let query = [("from", from.to_string()), ("to", to.to_string())];
+    let diary = client.get("calendar/diaryitems", token, &query).await?;
+    let items = array_items(diary, &["Items", "DiaryItems"]);
+    let details = fetch_lesson_details(client, token, &items).await;
+    Ok(normalize_diary(merge_lesson_details(items, &details)))
 }
 
 async fn fetch_lesson_details(

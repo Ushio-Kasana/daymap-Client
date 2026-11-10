@@ -4,13 +4,18 @@ mod auth;
 mod cache;
 mod messages;
 mod models;
+mod touch_id;
 mod updates;
 
-use assignments::{download_assignment_file, load_assignment, upload_assignment_file};
+use assignments::{
+    cached_assignment, download_assignment_file, load_assignment, upload_assignment_file,
+};
 use auth::{
-    begin_sign_in, cancel_sign_in, load_dashboard, load_folder_messages, load_message_folders,
-    load_message_recipients, open_auth_window, open_external, restore_session, search_contacts,
-    send_new_message, send_reply, sign_out, sync_mailbox, upload_message_attachment, AppState,
+    begin_sign_in, cached_timetable_week, cancel_sign_in, load_cached_dashboard, load_dashboard,
+    load_folder_messages, load_message_folders, load_message_recipients, load_timetable,
+    open_auth_window, open_external, reset_cache, restore_session, search_contacts,
+    send_new_message, send_reply, set_touch_id_enabled, sign_out, sync_mailbox,
+    touch_id_enabled, upload_message_attachment, AppState,
 };
 use updates::{download_update, open_update_installer, quit_app};
 
@@ -24,7 +29,14 @@ pub fn run() {
             open_auth_window,
             cancel_sign_in,
             restore_session,
+            touch_id_enabled,
+            set_touch_id_enabled,
             load_dashboard,
+            load_cached_dashboard,
+            load_timetable,
+            cached_timetable_week,
+            reset_cache,
+            cached_assignment,
             load_message_folders,
             load_folder_messages,
             load_message_recipients,

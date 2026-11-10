@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { errorText, invoke, isTauri } from "../api";
 import { displayName, initials, schoolLabel } from "../dates";
 import { Icon } from "../icons";
 import type { DaymapUser } from "../types";
@@ -24,6 +25,13 @@ export function Settings({
   updater,
 }: SettingsProps) {
   const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [confirmClearCache, setConfirmClearCache] = useState(false);
+  const [clearingCache, setClearingCache] = useState(false);
+  const [cacheNotice, setCacheNotice] = useState<string | null>(null);
+  const [cacheError, setCacheError] = useState<string | null>(null);
+  const [touchIdEnabled, setTouchIdEnabled] = useState(true);
+  const [touchIdBusy, setTouchIdBusy] = useState(false);
+  const [touchIdError, setTouchIdError] = useState<string | null>(null);
   const available = updater.available;
   const active = updater.downloading || updater.opening;
   const percent = updater.progress?.percent ?? null;
@@ -37,6 +45,53 @@ export function Settings({
   const installHelp = available
     ? installHint(updater.platform, Boolean(available.downloadName))
     : installHint(updater.platform);
+  const showTouchId = updater.platform === "macos" && isTauri() && !demo;
+
+  useEffect(() => {
+    if (!showTouchId) return;
+    let cancelled = false;
+    void invoke<boolean>("touch_id_enabled")
+      .then((enabled) => {
+        if (!cancelled) setTouchIdEnabled(enabled);
+      })
+      .catch((cause) => {
+        if (!cancelled) setTouchIdError(errorText(cause));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showTouchId]);
+
+  const toggleTouchId = async () => {
+    if (touchIdBusy) return;
+    const next = !touchIdEnabled;
+    setTouchIdEnabled(next);
+    setTouchIdBusy(true);
+    setTouchIdError(null);
+    try {
+      await invoke("set_touch_id_enabled", { enabled: next });
+    } catch (cause) {
+      setTouchIdEnabled(!next);
+      setTouchIdError(errorText(cause));
+    } finally {
+      setTouchIdBusy(false);
+    }
+  };
+
+  const clearCache = async () => {
+    setClearingCache(true);
+    setCacheError(null);
+    setCacheNotice(null);
+    try {
+      await invoke("reset_cache");
+      setCacheNotice("Offline data cleared.");
+    } catch (cause) {
+      setCacheError(errorText(cause));
+    } finally {
+      setClearingCache(false);
+      setConfirmClearCache(false);
+    }
+  };
 
   return (
     <div className="settings-page">
@@ -106,6 +161,51 @@ export function Settings({
           <span>Refresh only runs while Daymap is open. You can also refresh from the top bar.</span>
         </div>
       </section>
+
+      {showTouchId && (
+        <section className="settings-card">
+          <div className="settings-card-title">
+            <span>Unlock</span>
+          </div>
+          <p className="settings-copy">
+            Choose whether reopening Daymap asks for your fingerprint, when available, before
+            restoring the saved session. This is on by default.
+          </p>
+          <div className="settings-row">
+            <div>
+              <strong>Require Touch ID</strong>
+              <span>
+                {touchIdEnabled
+                  ? "Daymap asks for Touch ID, or your Mac password as a fallback, when reopening."
+                  : "Daymap opens your saved session without the fingerprint prompt."}
+              </span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={touchIdEnabled}
+              aria-label="Require Touch ID"
+              className={`touch-id-switch ${touchIdEnabled ? "on" : ""}`}
+              onClick={() => void toggleTouchId()}
+              disabled={touchIdBusy}
+            >
+              <span />
+            </button>
+          </div>
+          {touchIdError && (
+            <p className="settings-update-error" role="alert">
+              {touchIdError}
+            </p>
+          )}
+          <div className="settings-note">
+            <Icon name="info" size={13} />
+            <span>
+              This is an app unlock, not extra keychain encryption. Your saved Daymap tokens
+              stay in the macOS keychain.
+            </span>
+          </div>
+        </section>
+      )}
 
       <section className="settings-card">
         <div className="settings-card-title">
@@ -201,6 +301,43 @@ export function Settings({
 
       <section className="settings-card">
         <div className="settings-card-title">
+          <span>Offline data</span>
+        </div>
+        <p className="settings-copy">
+          Daymap keeps your last dashboard, messages, assignment details and timetable weeks on
+          this computer so they open without a connection. Sign-in tokens are stored separately
+          in the operating system keychain and are not affected.
+        </p>
+        <div className="settings-row">
+          <div>
+            <strong>Saved offline data</strong>
+            <span>Clear the saved copy if it looks out of date.</span>
+          </div>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => setConfirmClearCache(true)}
+            disabled={clearingCache || demo}
+          >
+            <Icon name="archive" size={14} />
+            <span>{clearingCache ? "Clearing…" : "Clear offline data"}</span>
+          </button>
+        </div>
+        {cacheNotice && (
+          <p className="settings-update-status">
+            <Icon name="check" size={13} />
+            <span>{cacheNotice}</span>
+          </p>
+        )}
+        {cacheError && (
+          <p className="settings-update-error" role="alert">
+            {cacheError}
+          </p>
+        )}
+      </section>
+
+      <section className="settings-card">
+        <div className="settings-card-title">
           <span>Session</span>
         </div>
         <div className="session-actions">
@@ -239,6 +376,46 @@ export function Settings({
           account you sign in with.
         </p>
       </section>
+
+      {confirmClearCache && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setConfirmClearCache(false);
+          }}
+        >
+          <div className="modal-card confirm-modal" role="dialog" aria-modal="true">
+            <div className="modal-head">
+              <div>
+                <h2>Clear offline data?</h2>
+                <p>
+                  Saved dashboard, messages, assignment details and timetable weeks will be
+                  removed from this computer. Your Daymap account and sign-in are not affected.
+                </p>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <span />
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setConfirmClearCache(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="danger-button"
+                  onClick={() => void clearCache()}
+                >
+                  Clear cache
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {confirmSignOut && (
         <div

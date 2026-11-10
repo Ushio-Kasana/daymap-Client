@@ -177,6 +177,13 @@ export function AppShell({
 
         {updater.available && !updater.dismissed && <UpdateBanner updater={updater} />}
 
+        {loading && dashboard && !demo && (
+          <div className="obtaining-bar" role="status" aria-live="polite">
+            <span className="spinner" />
+            <span>Obtaining the latest from Daymap…</span>
+          </div>
+        )}
+
         <main className={`page-scroll ${flush ? "flush" : ""}`}>
           {error && (
             <div className="error-banner" role="alert">
@@ -191,20 +198,21 @@ export function AppShell({
           {!dashboard ? (
             <LoadingPanel />
           ) : section === "overview" ? (
-            <Overview dashboard={dashboard} goTo={onSection} />
+            <Overview dashboard={dashboard} goTo={onSection} obtaining={loading} />
           ) : section === "tasks" ? (
-            <Tasks dashboard={dashboard} />
+            <Tasks dashboard={dashboard} obtaining={loading} />
           ) : section === "messages" ? (
             <Messages
               dashboard={dashboard}
               demo={demo}
+              obtaining={loading}
               onMarkRead={onMarkMessageRead}
               onRefresh={onRefresh}
             />
           ) : section === "notices" ? (
-            <Notices dashboard={dashboard} demo={demo} />
+            <Notices dashboard={dashboard} demo={demo} obtaining={loading} />
           ) : section === "timetable" ? (
-            <Timetable dashboard={dashboard} />
+            <Timetable dashboard={dashboard} demo={demo} />
           ) : (
             <Settings
               user={user}

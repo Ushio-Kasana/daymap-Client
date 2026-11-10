@@ -18,6 +18,7 @@ export type IconName =
   | "close"
   | "logout"
   | "right"
+  | "left"
   | "sparkles"
   | "link"
   | "info"
@@ -173,6 +174,8 @@ function paths(name: IconName) {
       );
     case "right":
       return <path d="m9 18 6-6-6-6" />;
+    case "left":
+      return <path d="m15 18-6-6 6-6" />;
     case "sparkles":
       return (
         <>

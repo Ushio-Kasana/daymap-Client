@@ -75,6 +75,9 @@ Planned for later sessions:
 - ☐ Optional menu-bar / tray behaviour.
 - ☐ Richer attachment previews inside messages.
 
+See [TODO.md](TODO.md) for the full working list, including reported bugs and
+platform build targets.
+
 ## Development
 
 Requirements:
@@ -155,6 +158,11 @@ release the app will offer.
 - The password is entered only on the school's Daymap/EdPass page in the embedded webview.
 - Access and refresh tokens stay in Rust. The React layer only receives profile/dashboard data.
 - The session is stored as one JSON value in the operating system keychain.
+- On macOS, reopening a saved session asks for Touch ID when biometrics are
+  enrolled, with the login password as the system fallback. **Require Touch ID**
+  in Settings turns this off; it is on by default. Without biometrics, the normal
+  keychain prompt is used. This is an app-level unlock; the keychain still
+  protects the saved tokens.
 - The app does not log tokens. Keychain failures are reported locally without printing the
   session contents.
 - HTTPS validation uses the operating system's certificate store, including school-installed

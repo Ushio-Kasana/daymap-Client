@@ -46,9 +46,10 @@ export function sameDay(a: Date | null, b: Date | null): boolean {
   );
 }
 
-export function weekFromToday(now = new Date()): Date[] {
-  const today = startOfDay(now);
-  return Array.from({ length: 7 }, (_, index) => addDays(today, index));
+export function isoDate(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 export function weekOf(date = new Date()): Date[] {

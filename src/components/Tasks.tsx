@@ -31,7 +31,13 @@ interface TaskGroup {
   tasks: AssessmentTask[];
 }
 
-export function Tasks({ dashboard }: { dashboard: Dashboard }) {
+export function Tasks({
+  dashboard,
+  obtaining,
+}: {
+  dashboard: Dashboard;
+  obtaining: boolean;
+}) {
   const [filter, setFilter] = useState<TaskFilter>("upcoming");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -92,11 +98,19 @@ export function Tasks({ dashboard }: { dashboard: Dashboard }) {
           {filtered.length === 0 ? (
             <div className="empty-state small">
               <Icon name="tasks" size={30} />
-              <strong>{filter === "completed" ? "Nothing completed yet" : "No tasks here"}</strong>
+              <strong>
+                {obtaining
+                  ? "Obtaining tasks…"
+                  : filter === "completed"
+                    ? "Nothing completed yet"
+                    : "No tasks here"}
+              </strong>
               <span>
-                {filter === "completed"
-                  ? "Submitted and graded tasks will appear here."
-                  : "Tasks from Daymap will appear here after a refresh."}
+                {obtaining
+                  ? "Daymap is still loading your assessment tasks."
+                  : filter === "completed"
+                    ? "Submitted and graded tasks will appear here."
+                    : "Tasks from Daymap will appear here after a refresh."}
               </span>
             </div>
           ) : (
@@ -175,11 +189,19 @@ function TaskDetail({ task, schoolCode }: { task: AssessmentTask; schoolCode?: s
     if (!desktop) return;
     setLoading(true);
     setLoadError(null);
+    let hadCached = false;
     try {
+      const cached = await invoke<AssignmentBundle | null>("cached_assignment", {
+        taskId: task.id,
+      }).catch(() => null);
+      if (cached) {
+        hadCached = true;
+        setAssignment(cached);
+      }
       const bundle = await invoke<AssignmentBundle>("load_assignment", { taskId: task.id });
       setAssignment(bundle);
     } catch (cause) {
-      setLoadError(errorText(cause));
+      if (!hadCached) setLoadError(errorText(cause));
     } finally {
       setLoading(false);
     }
@@ -286,7 +308,7 @@ function TaskDetail({ task, schoolCode }: { task: AssessmentTask; schoolCode?: s
       {desktop && loading && assignment === null && (
         <div className="detail-card assignment-loading">
           <span className="spinner" />
-          <span>Loading assignment…</span>
+          <span>Obtaining assignment…</span>
         </div>
       )}
 

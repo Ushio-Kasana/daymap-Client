@@ -6,6 +6,40 @@ All notable changes to Daymap Client are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-11-10
+
+### Added
+
+- Timetable history: the day strip shows the whole selected week, with previous
+  and next week buttons, so days that have already passed can be viewed again.
+- Past and future timetable weeks load on demand, with a full-page loading
+  state and an inline loading bar when part of the week is already on screen.
+- Timetable weeks are cached on disk. The previous, current and upcoming weeks
+  open instantly and stay available without a connection.
+- Assignment details, resources and submitted work are cached the first time a
+  task is opened, so previously opened tasks work offline.
+- Settings now has **Clear offline data**, with a confirmation step.
+- An “Obtaining the latest from Daymap…” notice, and section placeholders, while
+  fresh data loads in the background.
+- On macOS, reopening a saved session asks for Touch ID when biometrics are
+  enrolled, with the login password available as the system fallback. This can
+  be turned off in Settings; it is on by default.
+
+### Changed
+
+- Signing in or restoring a session now shows the saved dashboard immediately,
+  then refreshes in the background instead of waiting on the network first.
+- A failed timetable week or assignment request now falls back to the cached
+  copy instead of showing an empty view.
+
+### Fixed
+
+- The timetable no longer hides days before today, or reports a past week as
+  empty while it is still loading.
+- macOS builds now keep a stable code signature across updates, so the
+  saved-session keychain item can be allowed once instead of macOS treating each
+  build as a new app.
+
 ## [0.1.3] - 2026-11-10
 
 ### Added
@@ -57,6 +91,7 @@ All notable changes to Daymap Client are documented here. The format follows
 - Assignment details now read the portal's task payload, so resources and the
   upload control are populated correctly.
 
-[Unreleased]: https://github.com/Ushio-Kasana/daymap-Client/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/Ushio-Kasana/daymap-Client/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.4
 [0.1.3]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.3
 [0.1.2]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.2

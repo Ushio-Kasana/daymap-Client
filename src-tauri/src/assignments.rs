@@ -1,12 +1,13 @@
 use crate::api::{array_items, field_bool, field_f64, field_i64, field_string};
-use crate::auth::{with_authenticated, AppState};
+use crate::auth::{current_user, with_authenticated, AppState};
+use crate::cache;
 use crate::messages::{MessageError, PortalClient};
 use crate::models::{AssignmentBundle, AssignmentDetail, AssignmentFile};
 use reqwest::Client;
 use serde_json::{json, Value};
 use std::path::Path;
 use std::time::Duration;
-use tauri::State;
+use tauri::{AppHandle, State};
 use url::Url;
 
 const UPLOAD_TIMEOUT_SECONDS: u64 = 300;
@@ -302,18 +303,42 @@ pub(crate) fn guess_mime(file_name: &str) -> String {
 
 #[tauri::command]
 pub async fn load_assignment(
+    app: AppHandle,
     task_id: i64,
     state: State<'_, AppState>,
 ) -> Result<AssignmentBundle, String> {
+    let user = current_user(&state).ok_or_else(|| "You are not signed in.".to_string())?;
     let http = state.http.clone();
-    with_authenticated(state.inner(), move |session, token| {
+    let result = with_authenticated(state.inner(), move |session, token| {
         let http = http.clone();
         async move {
             let id = student_id(&session)?;
             fetch_assignment(&http, &session.api_base, &token, id, task_id).await
         }
     })
-    .await
+    .await;
+
+    match result {
+        Ok(bundle) => {
+            let _ = cache::save_assignment(&app, &user, task_id, &bundle);
+            Ok(bundle)
+        }
+        // Fall back to the saved copy so a task opened before still works offline.
+        Err(error) => match cache::assignment(&app, &user, task_id) {
+            Some(bundle) => Ok(bundle),
+            None => Err(error),
+        },
+    }
+}
+
+#[tauri::command]
+pub fn cached_assignment(
+    app: AppHandle,
+    task_id: i64,
+    state: State<'_, AppState>,
+) -> Result<Option<AssignmentBundle>, String> {
+    let user = current_user(&state).ok_or_else(|| "You are not signed in.".to_string())?;
+    Ok(cache::assignment(&app, &user, task_id))
 }
 
 #[tauri::command]

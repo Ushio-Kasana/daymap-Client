@@ -30,6 +30,7 @@ interface Attachment {
 interface MessagesProps {
   dashboard: Dashboard;
   demo: boolean;
+  obtaining: boolean;
   onMarkRead: (messageId: number) => void;
   onRefresh: () => void;
 }
@@ -37,6 +38,7 @@ interface MessagesProps {
 export function Messages({
   dashboard,
   demo,
+  obtaining,
   onMarkRead,
   onRefresh,
 }: MessagesProps) {
@@ -252,7 +254,7 @@ export function Messages({
           {loadingFolder ? (
             <div className="message-list-loading">
               <span className="spinner" />
-              <span>Loading {currentFolder?.title ?? "messages"}…</span>
+              <span>Obtaining {currentFolder?.title ?? "messages"}…</span>
             </div>
           ) : filtered.length === 0 ? (
             <div className="empty-state small message-empty">
@@ -260,20 +262,24 @@ export function Messages({
               <strong>
                 {query
                   ? "No matching messages"
-                  : folderId === "1"
-                    ? "Inbox is empty"
-                    : `${currentFolder?.title ?? "Folder"} is empty`}
+                  : obtaining && folderId === "1"
+                    ? "Obtaining messages…"
+                    : folderId === "1"
+                      ? "Inbox is empty"
+                      : `${currentFolder?.title ?? "Folder"} is empty`}
               </strong>
               <span>
                 {query
                   ? "Try a different subject, sender or phrase."
-                  : folderId === "2"
-                    ? "Messages you send will appear here."
-                    : folderId === "3"
-                      ? "Archived messages will appear here."
-                      : folderId === "10"
-                        ? "Messages sent by email and SMS will appear here."
-                        : "Messages in this folder will appear here."}
+                  : obtaining && folderId === "1"
+                    ? "Daymap is still loading your inbox."
+                    : folderId === "2"
+                      ? "Messages you send will appear here."
+                      : folderId === "3"
+                        ? "Archived messages will appear here."
+                        : folderId === "10"
+                          ? "Messages sent by email and SMS will appear here."
+                          : "Messages in this folder will appear here."}
               </span>
             </div>
           ) : (

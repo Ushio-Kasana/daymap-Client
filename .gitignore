@@ -12,3 +12,9 @@ src-tauri/gen/
 
 # Local-only privacy term list used by scripts/sensitive_gate.py
 scripts/sensitive-terms.local
+
+# Local agent handoff. Keep session context out of the repository.
+AGENTS.md
+
+# Temporary self-signed signing material. Never commit this directory.
+.signing-temp/
