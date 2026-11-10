@@ -6,6 +6,8 @@ All notable changes to Daymap Client are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-11-10
+
 ### Added
 
 - Day and Week timetable views. Week view hides Saturday and Sunday when they
@@ -27,6 +29,7 @@ All notable changes to Daymap Client are documented here. The format follows
 - After navigating to another week, the Day strip follows that week so the
   selected day stays visible.
 - Desktop builds now run automatically for pull requests into `main` and pushes to `main` or `testing`; tagged builds still publish installers to GitHub releases.
+- GitHub releases now use the matching `CHANGELOG.md` section as their release body.
 - Release builds now publish installers to GitHub releases; updates are downloaded inside Daymap, then handed to the operating system.
 - Downloaded installers are saved to Downloads. Daymap opens the installer and quits instead of restarting automatically, so the user can complete the platform installer flow.
 - macOS DMGs now use a compact drag-to-Applications window with a custom arrow background and larger app icons.
@@ -54,5 +57,6 @@ All notable changes to Daymap Client are documented here. The format follows
 - Assignment details now read the portal's task payload, so resources and the
   upload control are populated correctly.
 
-[Unreleased]: https://github.com/Ushio-Kasana/daymap-Client/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/Ushio-Kasana/daymap-Client/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.3
 [0.1.2]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.2

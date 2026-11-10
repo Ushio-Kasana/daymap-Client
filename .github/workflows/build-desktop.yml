@@ -73,6 +73,27 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Prepare release notes
+        if: env.RELEASE_TAG != ''
+        id: release_notes
+        shell: bash
+        run: |
+          version="${RELEASE_TAG#v}"
+          notes="$(awk -v version="$version" '
+            index($0, "## [" version "]") == 1 { capture = 1 }
+            capture && /^## \[/ && index($0, "## [" version "]") != 1 { exit }
+            capture { print }
+          ' CHANGELOG.md)"
+          if [ -z "$notes" ]; then
+            echo "::error::No CHANGELOG.md section found for ${RELEASE_TAG}."
+            exit 1
+          fi
+          {
+            echo "body<<DAYMAP_RELEASE_NOTES_EOF"
+            printf '%s\n' "$notes"
+            echo "DAYMAP_RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and publish
         uses: tauri-apps/tauri-action@v1
         env:
@@ -83,8 +104,7 @@ jobs:
         with:
           tagName: ${{ env.RELEASE_TAG }}
           releaseName: ${{ env.RELEASE_TAG && format('Daymap {0}', env.RELEASE_TAG) || '' }}
-          releaseBody: |
-            Installers for this release. See the repository CHANGELOG.md for the full notes.
-          generateReleaseNotes: true
+          releaseBody: ${{ steps.release_notes.outputs.body }}
+          generateReleaseNotes: false
           uploadWorkflowArtifacts: true
           retryAttempts: 2

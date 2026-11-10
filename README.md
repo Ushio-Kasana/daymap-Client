@@ -123,7 +123,8 @@ Finder layout enabled on CI so those settings are included in published installe
 Windows and Linux installers should be produced on their respective operating systems, or
 through the included GitHub Actions workflow. The workflow builds all three platforms for pull
 requests into `main` and pushes to `main` or `testing`; manual dispatch can build artifacts
-without publishing. Pushing a `v*` tag publishes flat installers to a release.
+without publishing. Pushing a `v*` tag publishes flat installers to a release, using the matching
+`CHANGELOG.md` section as the release body.
 
 ### Update checks
 
@@ -219,9 +220,9 @@ Not verified here:
 - Windows and Linux compilation and installers. Build those through the included workflow or on
   native machines.
 - Linux Secret Service availability at runtime.
-- A real published upgrade from an older installed build to a newer release. No release newer
-  than 0.1.2 exists yet; the native download, progress, DMG mount and quit flow was exercised with
-  a local test build against v0.1.2.
+- An end-to-end upgrade from 0.1.2 to 0.1.3 after publication. The native download, progress,
+  DMG mount and quit flow was exercised with a local test build against v0.1.2, but has not yet
+  been run against the published 0.1.3 release.
 
 ### Privacy gate
 
