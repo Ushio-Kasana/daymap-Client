@@ -1,8 +1,11 @@
-import type { Dashboard, DaymapUser, Section } from "../types";
+import { useCallback, useEffect, useState } from "react";
+import type { Dashboard, DaymapUser, OverdueSettings, Section } from "../types";
+import { errorText, invoke } from "../api";
 import {
   displayName,
   initials,
   schoolLabel,
+  taskIsOverdue,
   updatedLabel,
 } from "../dates";
 import { Icon, type IconName } from "../icons";
@@ -62,8 +65,47 @@ export function AppShell({
   refreshMinutes,
   onRefreshMinutesChange,
 }: AppShellProps) {
+  const [overdueSettings, setOverdueSettings] = useState<OverdueSettings>({
+    mutedClasses: [],
+    notOverdueTaskIds: [],
+  });
+  const [overdueSettingsError, setOverdueSettingsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (demo) {
+      setOverdueSettings({ mutedClasses: [], notOverdueTaskIds: [] });
+      setOverdueSettingsError(null);
+      return;
+    }
+    let cancelled = false;
+    void invoke<OverdueSettings>("load_overdue_settings")
+      .then((settings) => {
+        if (cancelled) return;
+        setOverdueSettings(settings);
+        setOverdueSettingsError(null);
+      })
+      .catch((cause) => {
+        if (!cancelled) setOverdueSettingsError(errorText(cause));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [demo]);
+
+  const changeOverdueSettings = useCallback(
+    (settings: OverdueSettings) => {
+      setOverdueSettings(settings);
+      setOverdueSettingsError(null);
+      if (demo) return;
+      void invoke("save_overdue_settings", { settings }).catch((cause) => {
+        setOverdueSettingsError(errorText(cause));
+      });
+    },
+    [demo],
+  );
+
   const overdue =
-    dashboard?.tasks.filter((task) => task.overdue && !task.workReceived).length ?? 0;
+    dashboard?.tasks.filter((task) => taskIsOverdue(task, overdueSettings)).length ?? 0;
   const unread = dashboard?.messages.filter((message) => !message.read).length ?? 0;
   const flush = section === "messages" || section === "notices";
   const updater = useUpdater();
@@ -198,9 +240,19 @@ export function AppShell({
           {!dashboard ? (
             <LoadingPanel />
           ) : section === "overview" ? (
-            <Overview dashboard={dashboard} goTo={onSection} obtaining={loading} />
+            <Overview
+              dashboard={dashboard}
+              goTo={onSection}
+              obtaining={loading}
+              overdueSettings={overdueSettings}
+            />
           ) : section === "tasks" ? (
-            <Tasks dashboard={dashboard} obtaining={loading} />
+            <Tasks
+              dashboard={dashboard}
+              obtaining={loading}
+              overdueSettings={overdueSettings}
+              onOverdueSettingsChange={changeOverdueSettings}
+            />
           ) : section === "messages" ? (
             <Messages
               dashboard={dashboard}
@@ -222,6 +274,10 @@ export function AppShell({
               onOpenDaymap={onOpenDaymap}
               onSignOut={onSignOut}
               updater={updater}
+              tasks={dashboard?.tasks ?? []}
+              overdueSettings={overdueSettings}
+              onOverdueSettingsChange={changeOverdueSettings}
+              overdueSettingsError={overdueSettingsError}
             />
           )}
         </main>

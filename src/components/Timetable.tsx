@@ -4,6 +4,7 @@ import {
   absoluteDaymapUrl,
   addDays,
   attendanceLabel,
+  attendanceStatusForLesson,
   attendanceTint,
   classTint,
   extractLinks,
@@ -411,8 +412,9 @@ export function Timetable({ dashboard, demo }: TimetableProps) {
 
 function WeekLesson({ lesson }: { lesson: DiaryItem }) {
   const { title } = lessonHeading(lesson);
-  const attendance = attendanceLabel(lesson.attendanceStatus);
-  const tint = attendanceTint(lesson.attendanceStatus);
+  const status = attendanceStatusForLesson(lesson);
+  const attendance = attendanceLabel(status);
+  const tint = attendanceTint(status);
 
   return (
     <article className="week-lesson" style={{ borderLeftColor: classTint(lesson.title) }}>
@@ -432,8 +434,9 @@ function WeekLesson({ lesson }: { lesson: DiaryItem }) {
 
 function LessonRow({ lesson, schoolCode }: { lesson: DiaryItem; schoolCode?: string | null }) {
   const { title } = lessonHeading(lesson);
-  const attendance = attendanceLabel(lesson.attendanceStatus);
-  const tint = attendanceTint(lesson.attendanceStatus);
+  const status = attendanceStatusForLesson(lesson);
+  const attendance = attendanceLabel(status);
+  const tint = attendanceTint(status);
   const links = extractLinks(lesson.text);
 
   return (
@@ -459,7 +462,7 @@ function LessonRow({ lesson, schoolCode }: { lesson: DiaryItem; schoolCode?: str
         {lesson.calendar && !/^class lessons$/i.test(lesson.calendar.trim()) && (
           <span className="lesson-calendar">{lesson.calendar}</span>
         )}
-        {lesson.attendanceReason?.trim() && (
+        {attendance && lesson.attendanceReason?.trim() && (
           <span className="lesson-reason" style={{ color: tint }}>
             <Icon name="info" size={12} />
             {lesson.attendanceReason}

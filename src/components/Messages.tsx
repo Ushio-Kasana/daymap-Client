@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { errorText, invoke, listen, openExternal } from "../api";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
+  decodeHtmlEntities,
   formatFullStamp,
   formatRelativeShort,
   parseDaymapDate,
@@ -157,7 +158,7 @@ export function Messages({
     if (!term) return displayed;
     return displayed.filter(
       (message) =>
-        message.subject.toLowerCase().includes(term) ||
+        decodeHtmlEntities(message.subject).toLowerCase().includes(term) ||
         (message.senderName ?? "").toLowerCase().includes(term) ||
         stripHtml(message.text, 500).toLowerCase().includes(term),
     );
@@ -298,8 +299,16 @@ export function Messages({
                     <strong>{message.senderName || "Daymap"}</strong>
                     <span>{formatRelativeShort(parseDaymapDate(message.sentOn))}</span>
                   </span>
-                  <span className="message-list-subject">{message.subject}</span>
-                  <span className="message-list-preview">
+                  <span
+                    className="message-list-subject"
+                    title={decodeHtmlEntities(message.subject)}
+                  >
+                    {decodeHtmlEntities(message.subject)}
+                  </span>
+                  <span
+                    className="message-list-preview"
+                    title={stripHtml(message.text, 1_000) || undefined}
+                  >
                     {stripHtml(message.text, 140) || "No preview available."}
                   </span>
                 </span>
@@ -389,6 +398,7 @@ export function MessageDetail({
   }, [message.id]);
 
   const sender = message.senderName || "Daymap";
+  const subject = decodeHtmlEntities(message.subject);
   const body = stripHtml(message.text, 200_000) || "This message has no text.";
   const allowReply = !notice && Boolean(onRefresh);
   const meta = [message.sentTo, formatFullStamp(parseDaymapDate(message.sentOn))]
@@ -476,7 +486,9 @@ export function MessageDetail({
             </div>
           </div>
 
-          <h2 className="message-detail-subject">{message.subject}</h2>
+          <h2 className="message-detail-subject" title={subject}>
+            {subject}
+          </h2>
 
           <div className="message-detail-divider" />
 

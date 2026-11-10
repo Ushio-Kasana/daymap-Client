@@ -1,9 +1,18 @@
 import type { ReactNode } from "react";
-import type { AssessmentTask, Dashboard, DiaryItem, DaymapMessage, Section } from "../types";
+import type {
+  AssessmentTask,
+  Dashboard,
+  DiaryItem,
+  DaymapMessage,
+  OverdueSettings,
+  Section,
+} from "../types";
 import {
   attendanceLabel,
+  attendanceStatusForLesson,
   attendanceTint,
   classTint,
+  decodeHtmlEntities,
   displayName,
   dueWithinWeek,
   formatDueLabel,
@@ -24,15 +33,23 @@ interface OverviewProps {
   dashboard: Dashboard;
   goTo: (section: Section) => void;
   obtaining: boolean;
+  overdueSettings: OverdueSettings;
 }
 
-export function Overview({ dashboard, goTo, obtaining }: OverviewProps) {
+export function Overview({ dashboard, goTo, obtaining, overdueSettings }: OverviewProps) {
   const today = new Date();
   const upcoming = sortTasksByDue(
-    dashboard.tasks.filter((task) => !taskIsComplete(task) && !taskIsOverdue(task)),
+    dashboard.tasks.filter(
+      (task) =>
+        !taskIsComplete(task) &&
+        !task.overdue &&
+        !taskIsOverdue(task, overdueSettings),
+    ),
   );
-  const overdue = dashboard.tasks.filter(taskIsOverdue);
-  const dueSoon = dashboard.tasks.filter((task) => dueWithinWeek(task));
+  const overdue = dashboard.tasks.filter((task) => taskIsOverdue(task, overdueSettings));
+  const dueSoon = dashboard.tasks.filter((task) =>
+    dueWithinWeek(task, today, overdueSettings),
+  );
   const unread = dashboard.messages.filter((message) => !message.read);
   const todayLessons = dashboard.diary
     .filter((lesson) => lessonOnDay(lesson, today))
@@ -100,7 +117,7 @@ export function Overview({ dashboard, goTo, obtaining }: OverviewProps) {
           ) : (
             <div className="compact-list">
               {upcoming.slice(0, 4).map((task) => (
-                <CompactTask key={task.id} task={task} />
+                <CompactTask key={task.id} task={task} settings={overdueSettings} />
               ))}
             </div>
           )}
@@ -196,7 +213,14 @@ function Card({
   );
 }
 
-function CompactTask({ task }: { task: AssessmentTask }) {
+function CompactTask({
+  task,
+  settings,
+}: {
+  task: AssessmentTask;
+  settings: OverdueSettings;
+}) {
+  const overdue = taskIsOverdue(task, settings);
   return (
     <div className="task-compact">
       <span className="task-dot" style={{ background: classTint(task.className) }} />
@@ -204,7 +228,7 @@ function CompactTask({ task }: { task: AssessmentTask }) {
         <strong>{task.name}</strong>
         <small>{task.className || "Assessment"}</small>
       </div>
-      <span className={`task-time ${task.overdue ? "danger" : ""}`}>
+      <span className={`task-time ${overdue ? "danger" : ""}`}>
         {formatDueLabel(parseDaymapDate(task.dueDate))}
       </span>
     </div>
@@ -212,7 +236,8 @@ function CompactTask({ task }: { task: AssessmentTask }) {
 }
 
 function CompactLesson({ lesson }: { lesson: DiaryItem }) {
-  const attendance = attendanceLabel(lesson.attendanceStatus);
+  const status = attendanceStatusForLesson(lesson);
+  const attendance = attendanceLabel(status);
   return (
     <div className="lesson-compact">
       <div className="lesson-compact-top">
@@ -222,8 +247,8 @@ function CompactLesson({ lesson }: { lesson: DiaryItem }) {
           <span
             className="attendance-pill"
             style={{
-              color: attendanceTint(lesson.attendanceStatus),
-              background: `${attendanceTint(lesson.attendanceStatus)}1c`,
+              color: attendanceTint(status),
+              background: `${attendanceTint(status)}1c`,
             }}
           >
             {attendance.toUpperCase()}
@@ -238,6 +263,7 @@ function CompactLesson({ lesson }: { lesson: DiaryItem }) {
 }
 
 function MessageRow({ message }: { message: DaymapMessage }) {
+  const subject = decodeHtmlEntities(message.subject);
   return (
     <div className="message-row">
       <span className={`unread-dot ${message.read ? "read" : ""}`} />
@@ -249,8 +275,10 @@ function MessageRow({ message }: { message: DaymapMessage }) {
             {formatRelativeShort(parseDaymapDate(message.sentOn))}
           </span>
         </div>
-        <strong>{message.subject}</strong>
-        <p>{stripHtml(message.text, 150) || "No preview available."}</p>
+        <strong title={subject}>{subject}</strong>
+        <p title={stripHtml(message.text, 1_000) || undefined}>
+          {stripHtml(message.text, 150) || "No preview available."}
+        </p>
       </div>
     </div>
   );

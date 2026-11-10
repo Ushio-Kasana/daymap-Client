@@ -27,6 +27,11 @@ export interface AssessmentTask {
   workReceived?: string | null;
 }
 
+export interface OverdueSettings {
+  mutedClasses: string[];
+  notOverdueTaskIds: number[];
+}
+
 export interface DaymapMessage {
   id: number;
   subject: string;

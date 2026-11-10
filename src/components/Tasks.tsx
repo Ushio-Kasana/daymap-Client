@@ -9,12 +9,21 @@ import {
   startOfDay,
   addDays,
   classTint,
+  normalizeClassLabel,
+  taskHasOverdueOverride,
+  taskIsClassMuted,
   taskIsComplete,
   taskIsOverdue,
   taskShortStatus,
 } from "../dates";
 import { Icon } from "../icons";
-import type { AssessmentTask, AssignmentBundle, AssignmentFile, Dashboard } from "../types";
+import type {
+  AssessmentTask,
+  AssignmentBundle,
+  AssignmentFile,
+  Dashboard,
+  OverdueSettings,
+} from "../types";
 
 type TaskFilter = "upcoming" | "overdue" | "completed" | "all";
 
@@ -34,19 +43,26 @@ interface TaskGroup {
 export function Tasks({
   dashboard,
   obtaining,
+  overdueSettings,
+  onOverdueSettingsChange,
 }: {
   dashboard: Dashboard;
   obtaining: boolean;
+  overdueSettings: OverdueSettings;
+  onOverdueSettingsChange: (settings: OverdueSettings) => void;
 }) {
   const [filter, setFilter] = useState<TaskFilter>("upcoming");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const filtered = useMemo(
-    () => filterTasks(dashboard.tasks, filter, query),
-    [dashboard.tasks, filter, query],
+    () => filterTasks(dashboard.tasks, filter, query, overdueSettings),
+    [dashboard.tasks, filter, query, overdueSettings],
   );
-  const groups = useMemo(() => groupTasks(filtered, filter), [filtered, filter]);
+  const groups = useMemo(
+    () => groupTasks(filtered, filter, overdueSettings),
+    [filtered, filter, overdueSettings],
+  );
 
   useEffect(() => {
     if (selectedId !== null && filtered.some((task) => task.id === selectedId)) return;
@@ -133,14 +149,14 @@ export function Tasks({
                       </small>
                     </span>
                     <span className="task-list-due">
-                      <span className={taskIsOverdue(task) ? "danger-text" : ""}>
+                      <span className={taskIsOverdue(task, overdueSettings) ? "danger-text" : ""}>
                         {formatDueLabel(parseDaymapDate(task.dueDate))}
                       </span>
                       {taskIsComplete(task) ? (
                         <span className="completed-mark">
                           <Icon name="tasks" size={12} />
                         </span>
-                      ) : taskIsOverdue(task) ? (
+                      ) : taskIsOverdue(task, overdueSettings) ? (
                         <small className="danger-text">Overdue</small>
                       ) : null}
                     </span>
@@ -154,7 +170,12 @@ export function Tasks({
 
       <section className="task-detail-panel">
         {selected ? (
-          <TaskDetail task={selected} schoolCode={dashboard.user.schoolCode} />
+          <TaskDetail
+            task={selected}
+            schoolCode={dashboard.user.schoolCode}
+            overdueSettings={overdueSettings}
+            onOverdueSettingsChange={onOverdueSettingsChange}
+          />
         ) : (
           <div className="empty-state">
             <Icon name="book" size={38} />
@@ -167,9 +188,22 @@ export function Tasks({
   );
 }
 
-function TaskDetail({ task, schoolCode }: { task: AssessmentTask; schoolCode?: string | null }) {
-  const overdue = taskIsOverdue(task);
+function TaskDetail({
+  task,
+  schoolCode,
+  overdueSettings,
+  onOverdueSettingsChange,
+}: {
+  task: AssessmentTask;
+  schoolCode?: string | null;
+  overdueSettings: OverdueSettings;
+  onOverdueSettingsChange: (settings: OverdueSettings) => void;
+}) {
+  const overdue = taskIsOverdue(task, overdueSettings);
   const complete = taskIsComplete(task);
+  const className = task.className?.trim() || task.classCode?.trim() || "";
+  const mutedClass = taskIsClassMuted(task, overdueSettings);
+  const locallyNotOverdue = taskHasOverdueOverride(task, overdueSettings);
   const statusTint = overdue ? "var(--danger)" : complete ? "var(--success)" : "var(--accent)";
   const code = (schoolCode ?? "").toLowerCase();
   const daymapUrl = code
@@ -257,6 +291,36 @@ function TaskDetail({ task, schoolCode }: { task: AssessmentTask; schoolCode?: s
     }
   };
 
+  const setOverdueOverride = (hidden: boolean) => {
+    const ids = new Set(overdueSettings.notOverdueTaskIds);
+    if (hidden) ids.add(task.id);
+    else ids.delete(task.id);
+    onOverdueSettingsChange({
+      ...overdueSettings,
+      notOverdueTaskIds: [...ids],
+    });
+  };
+
+  const muteClass = () => {
+    if (!className || mutedClass) return;
+    onOverdueSettingsChange({
+      ...overdueSettings,
+      mutedClasses: [...overdueSettings.mutedClasses, className],
+    });
+  };
+
+  const unmuteClass = () => {
+    const labels = [task.className, task.classCode]
+      .map(normalizeClassLabel)
+      .filter(Boolean);
+    onOverdueSettingsChange({
+      ...overdueSettings,
+      mutedClasses: overdueSettings.mutedClasses.filter(
+        (value) => !labels.includes(normalizeClassLabel(value)),
+      ),
+    });
+  };
+
   const description = plainText(assignment?.detail.description);
 
   return (
@@ -274,11 +338,22 @@ function TaskDetail({ task, schoolCode }: { task: AssessmentTask; schoolCode?: s
 
       <div className="status-box" style={{ borderColor: `${statusTint}55`, background: `${statusTint}14` }}>
         <Icon name={overdue ? "warning" : complete ? "tasks" : "clock"} size={16} />
-        <span style={{ color: statusTint }}>{taskShortStatus(task)}</span>
+        <span style={{ color: statusTint }}>{taskShortStatus(task, overdueSettings)}</span>
         {task.maxMark != null && task.maxMark > 0 && task.graded && (
           <small>{Math.round(task.maxMark)} marks</small>
         )}
       </div>
+
+      {task.overdue && !overdue && (
+        <div className="notice-line muted">
+          <Icon name="info" size={13} />
+          <span>
+            {locallyNotOverdue
+              ? "You marked this task as not overdue on this computer."
+              : `Overdue is muted for ${className || "this class"} on this computer.`}
+          </span>
+        </div>
+      )}
 
       <div className="detail-grid">
         <DetailRow label="Due" value={formatDueLabel(parseDaymapDate(task.dueDate))} danger={overdue} />
@@ -298,7 +373,7 @@ function TaskDetail({ task, schoolCode }: { task: AssessmentTask; schoolCode?: s
         )}
       </div>
 
-      {task.status && (
+      {task.status && !(task.overdue && !overdue) && (
         <div className="daymap-status">
           <h4>DAYMAP STATUS</h4>
           <p>{task.status}</p>
@@ -373,6 +448,26 @@ function TaskDetail({ task, schoolCode }: { task: AssessmentTask; schoolCode?: s
       )}
 
       <div className="detail-actions">
+        {task.overdue && (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => setOverdueOverride(!locallyNotOverdue)}
+          >
+            <Icon name={locallyNotOverdue ? "refresh" : "check"} size={15} />
+            <span>{locallyNotOverdue ? "Restore overdue" : "Mark as not overdue"}</span>
+          </button>
+        )}
+        {className && (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={mutedClass ? unmuteClass : muteClass}
+          >
+            <Icon name={mutedClass ? "refresh" : "warning"} size={15} />
+            <span>{mutedClass ? "Unmute class" : "Mute class"}</span>
+          </button>
+        )}
         <button
           type="button"
           className="secondary-button"
@@ -481,14 +576,24 @@ function plainText(value?: string | null): string {
     .trim();
 }
 
-function filterTasks(tasks: AssessmentTask[], filter: TaskFilter, query: string): AssessmentTask[] {
+function filterTasks(
+  tasks: AssessmentTask[],
+  filter: TaskFilter,
+  query: string,
+  settings: OverdueSettings,
+): AssessmentTask[] {
   let base: AssessmentTask[];
   switch (filter) {
     case "upcoming":
-      base = tasks.filter((task) => !taskIsComplete(task) && !taskIsOverdue(task));
+      base = tasks.filter(
+        (task) =>
+          !taskIsComplete(task) &&
+          !task.overdue &&
+          !taskIsOverdue(task, settings),
+      );
       break;
     case "overdue":
-      base = tasks.filter(taskIsOverdue);
+      base = tasks.filter((task) => taskIsOverdue(task, settings));
       break;
     case "completed":
       base = tasks.filter(taskIsComplete);
@@ -506,7 +611,11 @@ function filterTasks(tasks: AssessmentTask[], filter: TaskFilter, query: string)
   );
 }
 
-function groupTasks(tasks: AssessmentTask[], filter: TaskFilter): TaskGroup[] {
+function groupTasks(
+  tasks: AssessmentTask[],
+  filter: TaskFilter,
+  settings: OverdueSettings,
+): TaskGroup[] {
   if (filter === "completed") {
     const sorted = [...tasks].sort(
       (left, right) =>
@@ -517,6 +626,7 @@ function groupTasks(tasks: AssessmentTask[], filter: TaskFilter): TaskGroup[] {
   }
 
   const overdue: AssessmentTask[] = [];
+  const cleared: AssessmentTask[] = [];
   const today: AssessmentTask[] = [];
   const tomorrow: AssessmentTask[] = [];
   const week: AssessmentTask[] = [];
@@ -526,8 +636,12 @@ function groupTasks(tasks: AssessmentTask[], filter: TaskFilter): TaskGroup[] {
   const weekEnd = addDays(startOfDay(now), 7);
 
   for (const task of tasks) {
-    if (taskIsOverdue(task)) {
+    if (taskIsOverdue(task, settings)) {
       overdue.push(task);
+      continue;
+    }
+    if (task.overdue) {
+      cleared.push(task);
       continue;
     }
     const due = parseDaymapDate(task.dueDate);
@@ -546,6 +660,7 @@ function groupTasks(tasks: AssessmentTask[], filter: TaskFilter): TaskGroup[] {
 
   const buckets: Array<[string, AssessmentTask[]]> = [
     ["Overdue", overdue],
+    ["Not overdue", cleared],
     ["Today", today],
     ["Tomorrow", tomorrow],
     ["This week", week],

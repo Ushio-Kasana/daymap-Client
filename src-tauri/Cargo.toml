@@ -1,6 +1,6 @@
 [package]
 name = "daymap-tauri"
-version = "0.1.4"
+version = "0.1.5"
 description = "A fast, unofficial desktop client for Daymap"
 authors = ["Daymap Client contributors"]
 edition = "2021"

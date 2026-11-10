@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  decodeHtmlEntities,
   formatRelativeShort,
   parseDaymapDate,
   stripHtml,
@@ -89,6 +90,8 @@ function NoticeCard({
   selected: boolean;
   onClick: () => void;
 }) {
+  const subject = decodeHtmlEntities(notice.subject);
+
   return (
     <button
       type="button"
@@ -99,8 +102,11 @@ function NoticeCard({
         <span>{notice.senderName || "School"}</span>
         <span>{formatRelativeShort(parseDaymapDate(notice.sentOn))}</span>
       </span>
-      <strong>{notice.subject}</strong>
-      <span className="notice-preview">
+      <strong title={subject}>{subject}</strong>
+      <span
+        className="notice-preview"
+        title={stripHtml(notice.text, 1_000) || undefined}
+      >
         {stripHtml(notice.text, 160) || "No preview available."}
       </span>
       {notice.hasAttachments && (

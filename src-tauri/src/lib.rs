@@ -4,6 +4,7 @@ mod auth;
 mod cache;
 mod messages;
 mod models;
+mod overdue;
 mod touch_id;
 mod updates;
 
@@ -17,6 +18,7 @@ use auth::{
     send_new_message, send_reply, set_touch_id_enabled, sign_out, sync_mailbox,
     touch_id_enabled, upload_message_attachment, AppState,
 };
+use overdue::{load_overdue_settings, save_overdue_settings};
 use updates::{download_update, open_update_installer, quit_app};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -31,6 +33,8 @@ pub fn run() {
             restore_session,
             touch_id_enabled,
             set_touch_id_enabled,
+            load_overdue_settings,
+            save_overdue_settings,
             load_dashboard,
             load_cached_dashboard,
             load_timetable,

@@ -1,5 +1,9 @@
 # Daymap Client
 
+<p align="center">
+  <img src="src-tauri/icons/app-icon.png" alt="Daymap app icon" width="128" />
+</p>
+
 A fast, unofficial Daymap desktop client for **macOS, Windows and Linux**, built with Tauri,
 React and Rust.
 
@@ -163,6 +167,9 @@ release the app will offer.
   in Settings turns this off; it is on by default. Without biometrics, the normal
   keychain prompt is used. This is an app-level unlock; the keychain still
   protects the saved tokens.
+- Settings → **Clear keychain and cache** signs out, removes the saved session from
+  the operating system keychain, and deletes all offline data. Your Daymap account is not
+  changed.
 - The app does not log tokens. Keychain failures are reported locally without printing the
   session contents.
 - HTTPS validation uses the operating system's certificate store, including school-installed

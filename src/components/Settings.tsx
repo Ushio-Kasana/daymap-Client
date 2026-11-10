@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { errorText, invoke, isTauri } from "../api";
 import { displayName, initials, schoolLabel } from "../dates";
 import { Icon } from "../icons";
-import type { DaymapUser } from "../types";
+import type { AssessmentTask, DaymapUser, OverdueSettings } from "../types";
 import { installHint, type UpdaterController } from "../updater";
 
 interface SettingsProps {
@@ -13,6 +13,10 @@ interface SettingsProps {
   onOpenDaymap: () => void;
   onSignOut: () => void;
   updater: UpdaterController;
+  tasks: AssessmentTask[];
+  overdueSettings: OverdueSettings;
+  onOverdueSettingsChange: (settings: OverdueSettings) => void;
+  overdueSettingsError: string | null;
 }
 
 export function Settings({
@@ -23,15 +27,23 @@ export function Settings({
   onOpenDaymap,
   onSignOut,
   updater,
+  tasks,
+  overdueSettings,
+  onOverdueSettingsChange,
+  overdueSettingsError,
 }: SettingsProps) {
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [confirmClearCache, setConfirmClearCache] = useState(false);
   const [clearingCache, setClearingCache] = useState(false);
   const [cacheNotice, setCacheNotice] = useState<string | null>(null);
   const [cacheError, setCacheError] = useState<string | null>(null);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
+  const [clearingAll, setClearingAll] = useState(false);
+  const [clearAllError, setClearAllError] = useState<string | null>(null);
   const [touchIdEnabled, setTouchIdEnabled] = useState(true);
   const [touchIdBusy, setTouchIdBusy] = useState(false);
   const [touchIdError, setTouchIdError] = useState<string | null>(null);
+  const [classInput, setClassInput] = useState("");
   const available = updater.available;
   const active = updater.downloading || updater.opening;
   const percent = updater.progress?.percent ?? null;
@@ -46,6 +58,38 @@ export function Settings({
     ? installHint(updater.platform, Boolean(available.downloadName))
     : installHint(updater.platform);
   const showTouchId = updater.platform === "macos" && isTauri() && !demo;
+  const classOptions = useMemo(() => {
+    const options = new Set<string>();
+    for (const task of tasks) {
+      for (const value of [task.className, task.classCode]) {
+        const label = value?.trim();
+        if (label) options.add(label);
+      }
+    }
+    return [...options].sort((left, right) => left.localeCompare(right));
+  }, [tasks]);
+
+  const addMutedClass = () => {
+    const value = classInput.trim();
+    if (!value) return;
+    const alreadyMuted = overdueSettings.mutedClasses.some(
+      (existing) => existing.toLowerCase() === value.toLowerCase(),
+    );
+    if (!alreadyMuted) {
+      onOverdueSettingsChange({
+        ...overdueSettings,
+        mutedClasses: [...overdueSettings.mutedClasses, value],
+      });
+    }
+    setClassInput("");
+  };
+
+  const removeMutedClass = (value: string) => {
+    onOverdueSettingsChange({
+      ...overdueSettings,
+      mutedClasses: overdueSettings.mutedClasses.filter((item) => item !== value),
+    });
+  };
 
   useEffect(() => {
     if (!showTouchId) return;
@@ -90,6 +134,22 @@ export function Settings({
     } finally {
       setClearingCache(false);
       setConfirmClearCache(false);
+    }
+  };
+
+  const clearEverything = async () => {
+    if (clearingAll || demo) return;
+    setClearingAll(true);
+    setClearAllError(null);
+    try {
+      await invoke("reset_cache");
+      await invoke("sign_out");
+      setConfirmClearAll(false);
+      onSignOut();
+    } catch (cause) {
+      setClearAllError(errorText(cause));
+    } finally {
+      setClearingAll(false);
     }
   };
 
@@ -159,6 +219,98 @@ export function Settings({
         <div className="settings-note">
           <Icon name="info" size={13} />
           <span>Refresh only runs while Daymap is open. You can also refresh from the top bar.</span>
+        </div>
+      </section>
+
+      <section className="settings-card">
+        <div className="settings-card-title">
+          <span>Overdue work</span>
+        </div>
+        <p className="settings-copy">
+          Daymap can mark work as overdue after it was handed in, or for a class you no longer
+          take. Mute that class here, or mark a single task as not overdue from its task page.
+        </p>
+        <div className="overdue-class-list" aria-label="Muted classes">
+          {overdueSettings.mutedClasses.length === 0 ? (
+            <span className="overdue-empty">No classes muted yet.</span>
+          ) : (
+            overdueSettings.mutedClasses.map((name) => (
+              <span className="overdue-class-chip" key={name}>
+                {name}
+                <button
+                  type="button"
+                  onClick={() => removeMutedClass(name)}
+                  disabled={demo}
+                  aria-label={`Unmute ${name}`}
+                >
+                  <Icon name="close" size={11} />
+                </button>
+              </span>
+            ))
+          )}
+        </div>
+        <form
+          className="overdue-add-row"
+          onSubmit={(event) => {
+            event.preventDefault();
+            addMutedClass();
+          }}
+        >
+          <input
+            className="overdue-class-input"
+            value={classInput}
+            onChange={(event) => setClassInput(event.target.value)}
+            list="overdue-class-options"
+            placeholder="Class name or code"
+            aria-label="Class to mute"
+            disabled={demo}
+          />
+          <datalist id="overdue-class-options">
+            {classOptions.map((option) => (
+              <option key={option} value={option} />
+            ))}
+          </datalist>
+          <button
+            type="submit"
+            className="secondary-button"
+            disabled={demo || !classInput.trim()}
+          >
+            Mute class
+          </button>
+        </form>
+        {overdueSettings.notOverdueTaskIds.length > 0 && (
+          <div className="settings-row">
+            <div>
+              <strong>Marked not overdue</strong>
+              <span>
+                {overdueSettings.notOverdueTaskIds.length}{" "}
+                {overdueSettings.notOverdueTaskIds.length === 1 ? "task" : "tasks"} hidden
+                locally.
+              </span>
+            </div>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() =>
+                onOverdueSettingsChange({ ...overdueSettings, notOverdueTaskIds: [] })
+              }
+              disabled={demo}
+            >
+              Restore all
+            </button>
+          </div>
+        )}
+        {overdueSettingsError && (
+          <p className="settings-update-error" role="alert">
+            {overdueSettingsError}
+          </p>
+        )}
+        <div className="settings-note">
+          <Icon name="info" size={13} />
+          <span>
+            These overrides stay on this computer and are not sent to Daymap. Your school and
+            Daymap still see the original status.
+          </span>
         </div>
       </section>
 
@@ -367,6 +519,39 @@ export function Settings({
 
       <section className="settings-card">
         <div className="settings-card-title">
+          <span>Reset saved data</span>
+        </div>
+        <p className="settings-copy">
+          Remove the saved session from the operating system keychain and delete all offline
+          dashboard, message, timetable and assignment data from this computer.
+        </p>
+        <div className="settings-row">
+          <div>
+            <strong>Keychain and offline cache</strong>
+            <span>Signs you out and clears saved tokens plus cached Daymap data.</span>
+          </div>
+          <button
+            type="button"
+            className="danger-button"
+            onClick={() => {
+              setClearAllError(null);
+              setConfirmClearAll(true);
+            }}
+            disabled={clearingAll || demo}
+          >
+            <Icon name="archive" size={14} />
+            <span>{clearingAll ? "Clearing…" : "Clear all data"}</span>
+          </button>
+        </div>
+        {clearAllError && (
+          <p className="settings-update-error" role="alert">
+            {clearAllError}
+          </p>
+        )}
+      </section>
+
+      <section className="settings-card">
+        <div className="settings-card-title">
           <span>About</span>
         </div>
         <strong className="about-title">Daymap for Desktop {updater.currentVersion}</strong>
@@ -410,6 +595,56 @@ export function Settings({
                   onClick={() => void clearCache()}
                 >
                   Clear cache
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmClearAll && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !clearingAll) {
+              setConfirmClearAll(false);
+            }
+          }}
+        >
+          <div className="modal-card confirm-modal" role="dialog" aria-modal="true">
+            <div className="modal-head">
+              <div>
+                <h2>Clear keychain and cache?</h2>
+                <p>
+                  This signs you out and removes your saved session from the operating system
+                  keychain. Offline dashboard, messages, timetable and assignment data will
+                  also be deleted. Your Daymap account is not affected.
+                </p>
+              </div>
+            </div>
+            {clearAllError && (
+              <p className="settings-update-error" role="alert">
+                {clearAllError}
+              </p>
+            )}
+            <div className="modal-footer">
+              <span />
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setConfirmClearAll(false)}
+                  disabled={clearingAll}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="danger-button"
+                  onClick={() => void clearEverything()}
+                  disabled={clearingAll}
+                >
+                  {clearingAll ? "Clearing…" : "Clear keychain and cache"}
                 </button>
               </div>
             </div>

@@ -1588,6 +1588,7 @@ code {
 .detail-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 21px;
 }
@@ -2527,11 +2528,14 @@ code {
 }
 
 .message-list-subject {
+  display: -webkit-box;
   overflow: hidden;
+  overflow-wrap: anywhere;
   font-size: 11px;
   font-weight: 590;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .message-list-preview {
@@ -2658,6 +2662,15 @@ code {
   font-size: 13px;
   line-height: 1.72;
   white-space: pre-wrap;
+}
+
+/* Hyphenate words that break across lines so wrapped text reads as continued. */
+.message-copy > p,
+.message-list-preview,
+.notice-preview,
+.message-body {
+  -webkit-hyphens: auto;
+  hyphens: auto;
 }
 
 .attachment-note {
@@ -3372,6 +3385,85 @@ code {
   font-size: 9px;
   line-height: 1.45;
   margin-top: 9px;
+}
+
+.overdue-class-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 22px;
+  margin-top: 10px;
+}
+
+.overdue-empty {
+  color: var(--muted);
+  font-size: 9.5px;
+}
+
+.overdue-class-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--field);
+  color: var(--text);
+  font-size: 9.5px;
+  padding: 4px 5px 4px 8px;
+}
+
+.overdue-class-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  padding: 0;
+}
+
+.overdue-class-chip button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.overdue-class-chip button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.overdue-add-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.overdue-class-input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: 0;
+  background: var(--field);
+  color: var(--text);
+  font-size: 10px;
+  padding: 6px 8px;
+}
+
+.overdue-class-input:focus {
+  border-color: color-mix(in srgb, var(--accent) 48%, transparent);
+}
+
+.overdue-class-input:disabled {
+  opacity: 0.55;
+}
+
+.notice-line.muted {
+  color: var(--muted);
 }
 
 .settings-update-row {

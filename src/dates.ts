@@ -1,4 +1,10 @@
-import type { AssessmentTask, DaymapUser, DiaryItem, LessonLink } from "./types";
+import type {
+  AssessmentTask,
+  DaymapUser,
+  DiaryItem,
+  LessonLink,
+  OverdueSettings,
+} from "./types";
 
 const DM_DATE =
   /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d{1,9}))?)?$/;
@@ -137,6 +143,66 @@ export function updatedLabel(fetchedAt?: string | null): string {
   return `Updated ${formatTime(date)}`;
 }
 
+const HTML_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: "\u00a0",
+  ensp: "\u2002",
+  emsp: "\u2003",
+  thinsp: "\u2009",
+  ndash: "\u2013",
+  mdash: "\u2014",
+  hellip: "\u2026",
+  lsquo: "\u2018",
+  rsquo: "\u2019",
+  ldquo: "\u201c",
+  rdquo: "\u201d",
+  laquo: "\u00ab",
+  raquo: "\u00bb",
+  copy: "\u00a9",
+  reg: "\u00ae",
+  trade: "\u2122",
+  deg: "\u00b0",
+  middot: "\u00b7",
+  bull: "\u2022",
+  times: "\u00d7",
+  divide: "\u00f7",
+  euro: "\u20ac",
+  pound: "\u00a3",
+  yen: "\u00a5",
+  cent: "\u00a2",
+  sect: "\u00a7",
+  para: "\u00b6",
+};
+
+/** Decode entities in plain text, including text Daymap has double-encoded. */
+export function decodeHtmlEntities(value: string): string {
+  let text = value;
+  for (let pass = 0; pass < 3; pass += 1) {
+    const decoded = text.replace(
+      /&(#(?:x[0-9a-f]+|[0-9]+)|[a-z][a-z0-9]+);/gi,
+      (match, entity: string) => {
+        if (entity.startsWith("#")) {
+          const hex = entity[1]?.toLowerCase() === "x";
+          const digits = entity.slice(hex ? 2 : 1);
+          const codePoint = Number.parseInt(digits, hex ? 16 : 10);
+          if (!Number.isFinite(codePoint) || codePoint < 1 || codePoint > 0x10ffff) {
+            return match;
+          }
+          return String.fromCodePoint(codePoint);
+        }
+        return HTML_ENTITIES[entity.toLowerCase()] ?? match;
+      },
+    );
+    if (decoded === text) return text;
+    text = decoded;
+  }
+  return text;
+}
+
 export function stripHtml(html?: string | null, limit = 200): string {
   if (!html) return "";
   const document = new DOMParser().parseFromString(html, "text/html");
@@ -146,7 +212,7 @@ export function stripHtml(html?: string | null, limit = 200): string {
   document
     .querySelectorAll("p, div, li, tr, h1, h2, h3, h4, h5, h6, blockquote")
     .forEach((node) => node.append(" "));
-  let text = document.body.textContent ?? "";
+  let text = decodeHtmlEntities(document.body.textContent ?? "");
   text = text
     .replace(/\u00a0/g, " ")
     .replace(/[ \t]{2,}/g, " ")
@@ -234,6 +300,16 @@ export function attendanceTint(status: number | null | undefined): string {
   }
 }
 
+export function attendanceStatusForLesson(
+  lesson: DiaryItem,
+  now = new Date(),
+): number | null {
+  const start = parseDaymapDate(lesson.start);
+  // Daymap can return a stale attendance code for a lesson that hasn't started.
+  if (start && start.getTime() > now.getTime()) return null;
+  return lesson.attendanceStatus ?? null;
+}
+
 export function displayName(user?: DaymapUser | null): string {
   const full = [user?.firstname, user?.surname]
     .map((part) => part?.trim() ?? "")
@@ -265,18 +341,56 @@ export function taskIsComplete(task: AssessmentTask): boolean {
   return taskIsSubmitted(task);
 }
 
-export function taskIsOverdue(task: AssessmentTask): boolean {
-  return task.overdue && !taskIsComplete(task);
+export function normalizeClassLabel(value?: string | null): string {
+  return (value ?? "").trim().toLocaleLowerCase();
 }
 
-export function taskShortStatus(task: AssessmentTask): string {
-  if (taskIsOverdue(task)) return "Overdue";
+export function taskIsClassMuted(
+  task: AssessmentTask,
+  settings: OverdueSettings,
+): boolean {
+  const classLabels = [task.classCode, task.className]
+    .map(normalizeClassLabel)
+    .filter(Boolean);
+  return classLabels.some((label) =>
+    settings.mutedClasses.some(
+      (muted) => normalizeClassLabel(muted) === label,
+    ),
+  );
+}
+
+export function taskHasOverdueOverride(
+  task: AssessmentTask,
+  settings: OverdueSettings,
+): boolean {
+  return settings.notOverdueTaskIds.includes(task.id);
+}
+
+export function taskIsOverdue(
+  task: AssessmentTask,
+  settings?: OverdueSettings,
+): boolean {
+  if (!task.overdue || taskIsComplete(task)) return false;
+  if (!settings) return true;
+  return !taskIsClassMuted(task, settings) && !taskHasOverdueOverride(task, settings);
+}
+
+export function taskShortStatus(
+  task: AssessmentTask,
+  settings?: OverdueSettings,
+): string {
+  if (taskIsOverdue(task, settings)) return "Overdue";
   if (taskIsSubmitted(task)) return "Submitted";
+  if (task.overdue && settings) return "Not overdue";
   return task.status?.trim() || "Not submitted";
 }
 
-export function dueWithinWeek(task: AssessmentTask, now = new Date()): boolean {
-  if (taskIsComplete(task) || taskIsOverdue(task)) return false;
+export function dueWithinWeek(
+  task: AssessmentTask,
+  now = new Date(),
+  settings?: OverdueSettings,
+): boolean {
+  if (taskIsComplete(task) || taskIsOverdue(task, settings)) return false;
   const due = parseDaymapDate(task.dueDate);
   if (!due) return false;
   const end = addDays(startOfDay(now), 7);

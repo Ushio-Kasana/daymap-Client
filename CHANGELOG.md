@@ -6,6 +6,35 @@ All notable changes to Daymap Client are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-11-10
+
+This release includes the 0.1.4 timetable, offline-cache, loading-state and Touch ID
+changes.
+
+### Added
+
+- A new open-book app icon with a blue-to-violet gradient. The 1024 px source artwork
+  fills the icon canvas and is kept in `src-tauri/icons/app-icon.png`.
+- Settings now has **Clear keychain and cache**, with a confirmation step, to
+  sign out and remove both the saved keychain session and all offline data.
+- Overdue-work controls. Settings can mute overdue work for a class, including a
+  class you no longer take, and an assignment can be marked as not overdue from
+  its task page. These overrides are account-scoped, stored only on this computer,
+  and excluded from the overdue badge, overview and task filters.
+
+### Changed
+
+- All bundled platform icons were regenerated from the new artwork.
+
+### Fixed
+
+- HTML entities in message and notice bodies now display as their intended characters.
+- Wrapped message and notice text now hyphenates broken words so continuation is visible.
+- Message subjects now wrap to two lines in the list, and full available subjects and
+  previews are exposed in tooltips.
+- Future and not-yet-started lessons no longer show a stale attendance status such as
+  **Late**. Attendance is only shown after the lesson has started.
+
 ## [0.1.4] - 2026-11-10
 
 ### Added
@@ -91,7 +120,8 @@ All notable changes to Daymap Client are documented here. The format follows
 - Assignment details now read the portal's task payload, so resources and the
   upload control are populated correctly.
 
-[Unreleased]: https://github.com/Ushio-Kasana/daymap-Client/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/Ushio-Kasana/daymap-Client/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.5
 [0.1.4]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.4
 [0.1.3]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.3
 [0.1.2]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.2
