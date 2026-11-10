@@ -50,8 +50,12 @@ pub async fn fetch_assignment(
     let resources_value = resources_response.unwrap_or(Value::Array(Vec::new()));
     let submission_value = submission_response.unwrap_or(Value::Null);
 
+    // The portal returns the task under a lowercase "task" key; older
+    // responses used "Task". Without this fallback every field silently
+    // defaulted, which hid the description and the upload button.
     let detail_object = detail_value
         .get("Task")
+        .or_else(|| detail_value.get("task"))
         .cloned()
         .unwrap_or_else(|| detail_value.clone());
 
