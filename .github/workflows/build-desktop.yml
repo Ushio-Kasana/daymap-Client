@@ -12,7 +12,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -25,6 +25,8 @@ jobs:
           - ubuntu-22.04
           - macos-latest
     runs-on: ${{ matrix.platform }}
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || '' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -61,47 +63,18 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build Tauri app
-        run: npm run tauri build
-
-      - name: Collect installers
-        shell: bash
-        run: |
-          mkdir -p release-assets
-          find src-tauri/target/release/bundle -maxdepth 2 -type f \
-            \( -name '*.dmg' -o -name '*.exe' -o -name '*.msi' \
-               -o -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) \
-            -exec cp {} release-assets/ \;
-          ls -l release-assets
-
-      - name: Upload installers
-        uses: actions/upload-artifact@v4
+      - name: Build and publish
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Tauri skips its Finder layout on CI by default. Keep it enabled so
+          # the custom DMG background, icon positions and 128 px icons are applied.
+          TAURI_BUNDLER_DMG_IGNORE_CI: "true"
         with:
-          name: daymap-${{ matrix.platform }}
-          path: release-assets/*
-          if-no-files-found: error
-
-  release:
-    name: Publish release
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: assets
-          merge-multiple: true
-
-      - name: Show release assets
-        run: ls -l assets
-
-      - name: Create or update the release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.release_tag || github.ref_name }}
-          files: assets/*
-          fail_on_unmatched_files: true
-          generate_release_notes: true
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: ${{ env.RELEASE_TAG && format('Daymap {0}', env.RELEASE_TAG) || '' }}
+          releaseBody: |
+            Installers for this release. See the repository CHANGELOG.md for the full notes.
+          generateReleaseNotes: true
+          uploadWorkflowArtifacts: true
+          retryAttempts: 2

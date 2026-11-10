@@ -24,6 +24,7 @@ const CLASSES = [
   { name: "Digital Technologies", code: "DIG1B" },
   { name: "Science 1C", code: "SCI1C" },
 ];
+const ROOMS = ["A12", "B7", "C4", "M2", "S3", "D1"];
 const TASK_NAMES = [
   "Research task — final draft",
   "Folio and statement of intent",
@@ -168,6 +169,8 @@ export function createDemoDashboard(): Dashboard {
       finish: at(0, 8, 55),
       calendar: "Class Lessons",
       attendanceStatus: 2,
+      room: "HG",
+      teacherName: teachers[index],
       type: 2,
     },
     {
@@ -178,6 +181,9 @@ export function createDemoDashboard(): Dashboard {
       calendar: "Class Lessons",
       attendanceStatus: Math.random() < 0.2 ? 3 : 2,
       attendanceReason: Math.random() < 0.2 ? pick(ATTENDANCE_NOTES) : null,
+      room: ROOMS[index % ROOMS.length],
+      teacherName: teachers[index],
+      substituteName: index === 1 ? teachers[(index + 3) % teachers.length] : null,
       type: 2,
       text:
         Math.random() < 0.4

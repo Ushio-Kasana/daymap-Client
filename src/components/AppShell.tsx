@@ -6,6 +6,7 @@ import {
   updatedLabel,
 } from "../dates";
 import { Icon, type IconName } from "../icons";
+import { installHint, useUpdater, type UpdaterController } from "../updater";
 import { Tasks } from "./Tasks";
 import { Timetable } from "./Timetable";
 import { Overview } from "./Overview";
@@ -65,6 +66,7 @@ export function AppShell({
     dashboard?.tasks.filter((task) => task.overdue && !task.workReceived).length ?? 0;
   const unread = dashboard?.messages.filter((message) => !message.read).length ?? 0;
   const flush = section === "messages" || section === "notices";
+  const updater = useUpdater();
 
   return (
     <div className="app-shell">
@@ -173,6 +175,8 @@ export function AppShell({
           </div>
         </header>
 
+        {updater.available && !updater.dismissed && <UpdateBanner updater={updater} />}
+
         <main className={`page-scroll ${flush ? "flush" : ""}`}>
           {error && (
             <div className="error-banner" role="alert">
@@ -209,9 +213,83 @@ export function AppShell({
               onRefreshMinutesChange={onRefreshMinutesChange}
               onOpenDaymap={onOpenDaymap}
               onSignOut={onSignOut}
+              updater={updater}
             />
           )}
         </main>
+      </div>
+    </div>
+  );
+}
+
+function UpdateBanner({ updater }: { updater: UpdaterController }) {
+  const update = updater.available;
+  if (!update || updater.dismissed) return null;
+
+  const active = updater.downloading || updater.opening;
+  const percent = updater.progress?.percent ?? null;
+  const actionLabel = updater.opening
+    ? "Opening installer…"
+    : updater.downloading
+      ? percent === null
+        ? "Downloading…"
+        : `Downloading ${percent}%`
+      : update.downloadLabel;
+  const help = installHint(updater.platform, Boolean(update.downloadName));
+
+  return (
+    <div className="update-banner" role="status" aria-live="polite">
+      <span className="update-banner-icon">
+        <Icon name="download" size={16} />
+      </span>
+      <div className="update-banner-copy">
+        <strong>Daymap {update.version} is available</strong>
+        {updater.error ? (
+          <span className="update-banner-error">{updater.error}</span>
+        ) : (
+          <>
+            <span>
+              {updater.opening
+                ? "Opening the installer and quitting Daymap."
+                : updater.downloading
+                  ? "Downloading the installer to your Downloads folder."
+                  : "Download the installer here."}
+            </span>
+            <span className="update-banner-help">{help}</span>
+          </>
+        )}
+        {active && percent !== null && (
+          <div
+            className="update-progress"
+            role="progressbar"
+            aria-label="Update download progress"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={percent}
+          >
+            <span style={{ width: `${percent}%` }} />
+          </div>
+        )}
+      </div>
+      <div className="update-banner-actions">
+        <button
+          type="button"
+          className="primary-button update-install-button"
+          onClick={() => void updater.downloadUpdate()}
+          disabled={active}
+        >
+          {actionLabel}
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={updater.dismiss}
+          disabled={active}
+          aria-label="Dismiss update"
+          title="Dismiss update"
+        >
+          <Icon name="close" size={15} />
+        </button>
       </div>
     </div>
   );

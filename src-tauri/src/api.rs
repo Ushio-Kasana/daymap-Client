@@ -2,6 +2,7 @@ use crate::models::{AssessmentTask, Dashboard, DaymapMessage, DaymapUser, DiaryI
 use chrono::{Duration, Local};
 use reqwest::{Client, StatusCode};
 use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use url::Url;
 
@@ -26,6 +27,7 @@ impl fmt::Display for ApiError {
     }
 }
 
+#[derive(Clone)]
 pub struct ApiClient {
     http: Client,
     base_url: String,
@@ -255,21 +257,117 @@ pub async fn fetch_dashboard(
         Err(_) => Value::Array(Vec::new()),
     };
     let diary = diary?;
+    let diary_items = array_items(diary, &["Items", "DiaryItems"]);
+    let diary_details = fetch_lesson_details(client, token, &diary_items).await;
+    let diary_items = merge_lesson_details(diary_items, &diary_details);
 
     let mut tasks = normalize_tasks(array_items(all, &["Tasks", "Assessments"]));
     let active_tasks = normalize_tasks(array_items(active, &["Tasks", "Assessments"]));
     let known: std::collections::HashSet<i64> = tasks.iter().map(|task| task.id).collect();
     tasks.extend(active_tasks.into_iter().filter(|task| !known.contains(&task.id)));
 
+    let diary = normalize_diary(diary_items);
+
     Ok(Dashboard {
         user: user.clone(),
         tasks,
         messages: normalize_messages(array_items(messages, &["Messages", "Items"])),
         notices: normalize_messages(array_items(notices, &["Messages", "Notices", "Items"])),
-        diary: normalize_diary(array_items(diary, &["Items", "DiaryItems"])),
+        diary,
         fetched_at: chrono::Utc::now().to_rfc3339(),
         offline: false,
     })
+}
+
+async fn fetch_lesson_details(
+    client: &ApiClient,
+    token: &str,
+    items: &[Value],
+) -> HashMap<i64, Value> {
+    let mut ids = Vec::new();
+    let mut seen = HashSet::new();
+    for item in items {
+        if field_i64(item, &["Type", "type"]) != Some(2) {
+            continue;
+        }
+        if let Some(id) = field_i64(item, &["ID", "Id", "id"]) {
+            if id > 0 && seen.insert(id) {
+                ids.push(id);
+            }
+        }
+    }
+
+    let mut details = HashMap::new();
+    for chunk in ids.chunks(8) {
+        let mut tasks = tokio::task::JoinSet::new();
+        for id in chunk {
+            let client = client.clone();
+            let token = token.to_string();
+            let id = *id;
+            tasks.spawn(async move {
+                let result = client
+                    .get(
+                        "calendar/lessonclass",
+                        &token,
+                        &[("eventId", id.to_string())],
+                    )
+                    .await;
+                (id, result)
+            });
+        }
+        while let Some(result) = tasks.join_next().await {
+            if let Ok((id, Ok(value))) = result {
+                details.insert(id, value);
+            }
+        }
+    }
+    details
+}
+
+fn merge_lesson_details(items: Vec<Value>, details: &HashMap<i64, Value>) -> Vec<Value> {
+    items
+        .into_iter()
+        .map(|mut item| {
+            let Some(id) = field_i64(&item, &["ID", "Id", "id"]) else {
+                return item;
+            };
+            let Some(detail) = details.get(&id).and_then(Value::as_object) else {
+                return item;
+            };
+            let Some(target) = item.as_object_mut() else {
+                return item;
+            };
+            for key in [
+                "Room",
+                "Rooms",
+                "room",
+                "rooms",
+                "Teacher",
+                "Teachers",
+                "teacher",
+                "teachers",
+                "Staff",
+                "staff",
+                "SubstituteTeacherName",
+                "substituteTeacherName",
+                "SubstituteTeacher",
+                "substituteTeacher",
+                "SubstituteName",
+                "substituteName",
+                "Substitute",
+                "substitute",
+                "ReliefTeacher",
+                "reliefTeacher",
+            ] {
+                if let Some(value) = detail.get(key) {
+                    if !value.is_null() {
+                        target.insert(key.to_string(), value.clone());
+                    }
+                }
+            }
+            item
+        })
+        .collect()
 }
 
 pub(crate) fn array_items(value: Value, wrapper_keys: &[&str]) -> Vec<Value> {
@@ -304,6 +402,41 @@ pub(crate) fn field_string(value: &Value, keys: &[&str]) -> Option<String> {
         Value::Number(number) => Some(number.to_string()),
         _ => None,
     })
+}
+
+fn text_value(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) if !text.trim().is_empty() => Some(text.trim().to_string()),
+        Value::Number(number) => Some(number.to_string()),
+        Value::Object(_) => field_string(
+            value,
+            &[
+                "Name",
+                "name",
+                "Title",
+                "title",
+                "DisplayName",
+                "displayName",
+                "FullName",
+                "fullName",
+            ],
+        )
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty()),
+        Value::Array(items) => {
+            let parts: Vec<String> = items.iter().filter_map(text_value).collect();
+            if parts.is_empty() {
+                None
+            } else {
+                Some(parts.join(", "))
+            }
+        }
+        _ => None,
+    }
+}
+
+fn field_text(value: &Value, keys: &[&str]) -> Option<String> {
+    field(value, keys).and_then(text_value)
 }
 
 pub(crate) fn field_i64(value: &Value, keys: &[&str]) -> Option<i64> {
@@ -392,6 +525,65 @@ fn normalize_diary(items: Vec<Value>) -> Vec<DiaryItem> {
                 calendar: field_string(&item, &["Calendar", "calendar"]),
                 attendance_status: field_i64(&item, &["AttendanceStatus", "attendanceStatus"]),
                 attendance_reason: field_string(&item, &["AttendanceReason", "attendanceReason"]),
+                room: field_text(
+                    &item,
+                    &[
+                        "Room",
+                        "room",
+                        "Rooms",
+                        "rooms",
+                        "RoomName",
+                        "roomName",
+                        "RoomCode",
+                        "roomCode",
+                        "ClassRoom",
+                        "classRoom",
+                        "Location",
+                        "location",
+                        "Venue",
+                        "venue",
+                    ],
+                ),
+                teacher_name: field_text(
+                    &item,
+                    &[
+                        "TeacherName",
+                        "teacherName",
+                        "Teacher",
+                        "teacher",
+                        "Teachers",
+                        "teachers",
+                        "ClassTeacher",
+                        "classTeacher",
+                        "StaffName",
+                        "staffName",
+                        "Staff",
+                        "staff",
+                        "OriginalTeacher",
+                        "originalTeacher",
+                        "RegularTeacher",
+                        "regularTeacher",
+                    ],
+                ),
+                substitute_name: field_text(
+                    &item,
+                    &[
+                        "SubstituteTeacherName",
+                        "substituteTeacherName",
+                        "SubstituteTeacher",
+                        "substituteTeacher",
+                        "SubstituteName",
+                        "substituteName",
+                        "Substitute",
+                        "substitute",
+                        "ReliefTeacher",
+                        "reliefTeacher",
+                        "ReplacementTeacher",
+                        "replacementTeacher",
+                        "CoverTeacher",
+                        "coverTeacher",
+                    ],
+                ),
                 item_type: field_i64(&item, &["Type", "type"]),
             })
         })

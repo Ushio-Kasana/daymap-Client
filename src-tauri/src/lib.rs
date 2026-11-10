@@ -4,6 +4,7 @@ mod auth;
 mod cache;
 mod messages;
 mod models;
+mod updates;
 
 use assignments::{download_assignment_file, load_assignment, upload_assignment_file};
 use auth::{
@@ -11,6 +12,7 @@ use auth::{
     load_message_recipients, open_auth_window, open_external, restore_session, search_contacts,
     send_new_message, send_reply, sign_out, sync_mailbox, upload_message_attachment, AppState,
 };
+use updates::{download_update, open_update_installer, quit_app};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -35,7 +37,10 @@ pub fn run() {
             load_assignment,
             download_assignment_file,
             upload_assignment_file,
-            upload_message_attachment
+            upload_message_attachment,
+            download_update,
+            open_update_installer,
+            quit_app
         ])
         .run(tauri::generate_context!())
         .expect("error while running Daymap");

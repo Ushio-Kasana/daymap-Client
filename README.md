@@ -28,6 +28,11 @@ Each button opens the latest release. Pick the file for your platform:
 | Windows | `.exe` installer or `.msi` |
 | Linux | `.AppImage`, `.deb` or `.rpm` |
 
+## Release notes
+
+See [CHANGELOG.md](CHANGELOG.md) for the changes in each release and the work
+currently queued for the next one.
+
 ## Screenshots
 
 The app's built-in preview mode, which runs on invented sample data with no school account.
@@ -53,7 +58,8 @@ Working today:
 - ✅ Overview with due-soon, overdue, unread and notice counts.
 - ✅ Tasks with search, filters, grouping and full task details.
 - ✅ Assignment resources with downloads, and work uploads through Daymap's own upload flow.
-- ✅ Weekly timetable with lessons and attendance status.
+- ✅ Day and Week timetable views with rooms, teachers and substitutes, and a week picker.
+- ✅ In-app update checks against GitHub releases, with download progress and the matching platform installer.
 - ✅ Messages with folders, search, compose, replies and file attachments.
 - ✅ Contact search across staff, students and parents.
 - ✅ School notices with a reading view.
@@ -65,7 +71,6 @@ Planned for later sessions:
 
 - ☐ Colour themes and appearance customisation.
 - ☐ Native desktop notifications for new tasks, messages and notices.
-- ☐ Automatic updates.
 - ☐ Contact export (CSV).
 - ☐ Optional menu-bar / tray behaviour.
 - ☐ Richer attachment previews inside messages.
@@ -111,9 +116,38 @@ Tauri writes platform bundles under `src-tauri/target/release/bundle/`:
 - Linux: `.deb` and `.AppImage` (depending on the installed bundler tools).
 - macOS: `.app` and `.dmg`.
 
+macOS DMGs use `src-tauri/assets/dmg-background.png`, 128 px app icons and a compact
+560×320 drag-to-Applications window. The release workflow explicitly keeps Tauri's
+Finder layout enabled on CI so those settings are included in published installers.
+
 Windows and Linux installers should be produced on their respective operating systems, or
 through the included GitHub Actions workflow. The workflow is manual/tag-triggered and publishes
-flat installers to a release; no signing keys are configured.
+flat installers to a release.
+
+### Update checks
+
+The desktop app asks the public GitHub Releases API for the latest published release at startup
+and when you choose **Check for updates** in Settings. If the tag is newer than the running
+version, the app offers the matching installer for the current platform.
+
+Daymap downloads the installer into your Downloads folder and shows byte/percentage progress in
+the update banner and Settings. It checks the file against GitHub's SHA-256 asset digest when one
+is provided. When the download finishes, Daymap opens the installer with the operating system and
+quits so the installer can replace it.
+
+On macOS this opens the DMG. If macOS asks whether Daymap can access your Downloads folder,
+choose Allow. Drag Daymap into Applications, replace the old copy, then reopen it. On Windows and
+Linux, follow the installer or package prompts, then reopen Daymap. If no matching installer is
+available, Daymap opens the GitHub release page instead.
+
+This flow relies on GitHub's HTTPS and release account security. It does not verify an app-level
+update signature, so only run releases published from this repository. GitHub's unauthenticated
+API allows 60 requests per hour per IP; normal use is one request per launch or manual check.
+
+To publish an update, bump the version in `package.json`, `src-tauri/Cargo.toml` and
+`src-tauri/tauri.conf.json`, move the relevant `CHANGELOG.md` entries under the new version,
+then commit and push a matching `v*` tag. The workflow publishes the installers and creates the
+release the app will offer.
 
 ### Sign-in and security
 
@@ -140,12 +174,14 @@ src/                 React UI
   components/        login, shell, overview, tasks, messages, notices, timetable, settings
   dates.ts           Daymap date parsing and display helpers
   demo.ts            sample dashboard
+  updater.ts         GitHub release checks, download progress and installer hand-off
 
 src-tauri/src/
   auth.rs            discovery, PKCE, auth window, token refresh, keychain
   api.rs             authenticated Daymap requests and dashboard normalization
   assignments.rs     task detail, resources, downloads and work uploads
   messages.rs        message folders, threads, contacts, replies, compose and attachments
+  updates.rs         update download, progress events, installer launch and app quit
   cache.rs           account-scoped offline dashboard, mailbox and contact cache
   models.rs          bridge models shared with the frontend
 ```
@@ -163,8 +199,14 @@ Verified locally on macOS:
 - Discovery against a school's Daymap host succeeds using the operating system trust store.
 - `npx tauri build --debug --no-bundle`.
 - `npx tauri build --debug` produced a macOS app bundle and DMG on the local machine.
+- Styled macOS DMG build with a 560×320 Finder window, 128 px icons, arrow background and
+  app/Applications positions applied under `CI=true`.
 - Browser sample mode: overview, tasks, messages, notices, timetable and settings rendered
   without console errors or horizontal overflow; compose and message-detail states were checked.
+- Update checks against the live GitHub release, an up-to-date state, and a mocked newer release
+  with the matching platform download label and installer URL.
+- Native macOS update download/progress, digest-complete hand-off, DMG mount and quit, using a
+  local test build that reported an older version so v0.1.2 appeared as an update.
 - Real sign-in: dashboard, tasks, timetable, notices and messages load against a live account.
 
 Not verified here:
@@ -176,6 +218,9 @@ Not verified here:
 - Windows and Linux compilation and installers. Build those through the included workflow or on
   native machines.
 - Linux Secret Service availability at runtime.
+- A real published upgrade from an older installed build to a newer release. No release newer
+  than 0.1.2 exists yet; the native download, progress, DMG mount and quit flow was exercised with
+  a local test build against v0.1.2.
 
 ### Privacy gate
 

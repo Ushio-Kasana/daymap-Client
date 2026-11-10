@@ -49,6 +49,9 @@ export interface DiaryItem {
   calendar?: string | null;
   attendanceStatus?: number | null;
   attendanceReason?: string | null;
+  room?: string | null;
+  teacherName?: string | null;
+  substituteName?: string | null;
   type?: number | null;
 }
 

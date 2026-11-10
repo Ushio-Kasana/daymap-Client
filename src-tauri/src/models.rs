@@ -96,6 +96,12 @@ pub struct DiaryItem {
     pub calendar: Option<String>,
     pub attendance_status: Option<i64>,
     pub attendance_reason: Option<String>,
+    #[serde(default)]
+    pub room: Option<String>,
+    #[serde(default)]
+    pub teacher_name: Option<String>,
+    #[serde(default)]
+    pub substitute_name: Option<String>,
     #[serde(rename = "type")]
     pub item_type: Option<i64>,
 }

@@ -51,6 +51,12 @@ export function weekFromToday(now = new Date()): Date[] {
   return Array.from({ length: 7 }, (_, index) => addDays(today, index));
 }
 
+export function weekOf(date = new Date()): Date[] {
+  const start = startOfDay(date);
+  const monday = addDays(start, -((start.getDay() + 6) % 7));
+  return Array.from({ length: 7 }, (_, index) => addDays(monday, index));
+}
+
 export function formatTime(date: Date | null): string {
   if (!date) return "—";
   const hour = date.getHours() % 12 || 12;

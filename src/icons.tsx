@@ -8,6 +8,7 @@ export type IconName =
   | "timetable"
   | "settings"
   | "refresh"
+  | "download"
   | "external"
   | "clock"
   | "warning"
@@ -110,6 +111,14 @@ function paths(name: IconName) {
         <>
           <path d="M20 11a8 8 0 1 0-2.3 5.7" />
           <path d="M20 5v6h-6" />
+        </>
+      );
+    case "download":
+      return (
+        <>
+          <path d="M12 3v12" />
+          <path d="m7 10 5 5 5-5" />
+          <path d="M5 21h14" />
         </>
       );
     case "external":
