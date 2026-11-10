@@ -121,8 +121,7 @@ macOS DMGs use `src-tauri/assets/dmg-background.png`, 128 px app icons and a com
 Finder layout enabled on CI so those settings are included in published installers.
 
 Windows and Linux installers should be produced on their respective operating systems, or
-through the included GitHub Actions workflow. The workflow builds all three platforms for pull
-requests into `main` and pushes to `main` or `testing`; manual dispatch can build artifacts
+through the included GitHub Actions workflow. The workflow builds all three platforms on pushes to `main`; manual dispatch can build artifacts
 without publishing. Pushing a `v*` tag publishes flat installers to a release, using the matching
 `CHANGELOG.md` section as the release body.
 
@@ -235,5 +234,4 @@ python3 scripts/sensitive_gate.py --staged          # what pre-commit runs
 python3 scripts/sensitive_gate.py --all-history     # what pre-push and CI run
 ```
 
-The term list is gitignored, so the identities it protects never enter the repository. The
-`Sensitive data gate` workflow repeats the scan on every push, including bypassed hooks.
+The term list is gitignored, so the identities it protects never enter the repository.The `Sensitive data gate` workflow repeats the scan on every push to `main`, including bypassed hooks.

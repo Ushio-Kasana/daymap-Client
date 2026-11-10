@@ -28,7 +28,7 @@ All notable changes to Daymap Client are documented here. The format follows
   the existing day strip.
 - After navigating to another week, the Day strip follows that week so the
   selected day stays visible.
-- Desktop builds now run automatically for pull requests into `main` and pushes to `main` or `testing`; tagged builds still publish installers to GitHub releases.
+- Desktop builds now run automatically on pushes to `main`; tagged builds still publish installers to GitHub releases.
 - GitHub releases now use the matching `CHANGELOG.md` section as their release body.
 - Release builds now publish installers to GitHub releases; updates are downloaded inside Daymap, then handed to the operating system.
 - Downloaded installers are saved to Downloads. Daymap opens the installer and quits instead of restarting automatically, so the user can complete the platform installer flow.
