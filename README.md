@@ -18,6 +18,22 @@ desktop backend.
 The goal is one desktop codebase that builds for **Windows, Linux and macOS**. The app is
 unofficial and is not affiliated with Daymap.
 
+## Screenshots
+
+The app's built-in preview mode, which runs on invented sample data with no school account.
+
+| Overview | Tasks |
+| --- | --- |
+| ![Overview](docs/screenshots/01-overview.png) | ![Tasks](docs/screenshots/02-tasks.png) |
+
+| Messages | Notices |
+| --- | --- |
+| ![Messages](docs/screenshots/03-messages.png) | ![Notices](docs/screenshots/04-notices.png) |
+
+| Timetable | Settings |
+| --- | --- |
+| ![Timetable](docs/screenshots/05-timetable.png) | ![Settings](docs/screenshots/06-settings.png) |
+
 ## Current milestone
 
 Working:

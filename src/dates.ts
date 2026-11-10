@@ -133,8 +133,19 @@ export function updatedLabel(fetchedAt?: string | null): string {
 export function stripHtml(html?: string | null, limit = 200): string {
   if (!html) return "";
   const document = new DOMParser().parseFromString(html, "text/html");
+  // textContent glues adjacent blocks together ("one.</p><p>Two" reads as
+  // "one.Two"), so keep a space where each block ends and a newline for <br>.
+  document.querySelectorAll("br").forEach((node) => node.replaceWith("\n"));
+  document
+    .querySelectorAll("p, div, li, tr, h1, h2, h3, h4, h5, h6, blockquote")
+    .forEach((node) => node.append(" "));
   let text = document.body.textContent ?? "";
-  text = text.replace(/\u00a0/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  text = text
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
   if (text.length > limit) text = text.slice(0, limit).trim();
   return text;
 }
