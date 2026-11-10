@@ -70,12 +70,6 @@ Planned for later sessions:
 - ☐ Optional menu-bar / tray behaviour.
 - ☐ Richer attachment previews inside messages.
 
-## About this project
-
-This started as the author's own native macOS Daymap client. It is not a port of someone else's
-app — the same app was rebuilt as a single cross-platform Tauri codebase, and the macOS version
-grew out of the same work. It remains unofficial and unaffiliated with Daymap.
-
 ## Development
 
 Requirements:
