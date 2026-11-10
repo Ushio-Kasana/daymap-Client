@@ -28,6 +28,12 @@ chrono = { version = "0.4", features = ["serde"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 open = "5"
 
+[patch.crates-io]
+# Tauri 2's Linux GTK3 stack requires glib 0.18, and upstream will not publish a
+# fixed 0.18 release. This is the published 0.18.5 crate with the upstream
+# VariantStrIter soundness backport applied; see vendor/glib/README.daymap.md.
+glib = { path = "vendor/glib" }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6"
 objc2 = "0.6"

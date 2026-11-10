@@ -128,9 +128,10 @@ macOS DMGs use `src-tauri/assets/dmg-background.png`, 128 px app icons and a com
 Finder layout enabled on CI so those settings are included in published installers.
 
 Windows and Linux installers should be produced on their respective operating systems, or
-through the included GitHub Actions workflow. The workflow builds all three platforms on pushes to `main`; manual dispatch can build artifacts
-without publishing. Pushing a `v*` tag publishes flat installers to a release, using the matching
-`CHANGELOG.md` section as the release body.
+through the included GitHub Actions workflow. The workflow is manual-only: dispatch **Build
+desktop apps** from `main` to build all three platforms. Leave `release_tag` empty for test
+artifacts, or set it to a version tag to publish flat installers to a release using the matching
+`CHANGELOG.md` section as the release body. Branch and tag pushes do not trigger a build.
 
 ### Update checks
 
@@ -154,8 +155,9 @@ API allows 60 requests per hour per IP; normal use is one request per launch or 
 
 To publish an update, bump the version in `package.json`, `src-tauri/Cargo.toml` and
 `src-tauri/tauri.conf.json`, move the relevant `CHANGELOG.md` entries under the new version,
-then commit and push a matching `v*` tag. The workflow publishes the installers and creates the
-release the app will offer.
+then commit and push `main`. Run **Build desktop apps** from `main` with `release_tag` set to the
+matching version tag. The workflow publishes the installers and creates the release the app will
+offer.
 
 ### Sign-in and security
 

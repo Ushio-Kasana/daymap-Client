@@ -25,6 +25,13 @@ changes.
 ### Changed
 
 - All bundled platform icons were regenerated from the new artwork.
+- Desktop builds are now manual-only. Branch and tag pushes no longer start a build;
+  dispatch **Build desktop apps** from `main` when ready.
+
+### Security
+
+- Pinned the upstream `glib` 0.18 backport for Tauri's Linux GTK3 stack, fixing the
+  `VariantStrIter` soundness issue (GHSA-wrw7-89jp-8q8g) while Tauri 2 remains on GTK3.
 
 ### Fixed
 
