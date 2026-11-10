@@ -38,6 +38,8 @@ finished, add it to `CHANGELOG.md` under `[Unreleased]` and tick it off here.
   be colour-tagged.
 - [ ] Colour customisation for assignments.
 - [ ] A custom local display name in Settings that overrides the name Daymap returns.
+- [ ] Show the account's Daymap profile image in place of the initials, with a Settings toggle
+  to enable or disable it. When disabled, use initials and do not fetch or cache the image.
 - [ ] Locally stored custom profiles in the client.
 - [x] Overdue-work management: mute overdue notifications for a specific class
   (including classes the user is no longer in) and mark assignments as not
