@@ -34,6 +34,9 @@ finished, add it to `CHANGELOG.md` under `[Unreleased]` and tick it off here.
 
 ## Features
 
+- [ ] **Class notes and class overview.** Make classes clickable to open a class overview,
+  including class notes.
+- [ ] **Assignment results.** Show released results and marks for completed assignments.
 - [ ] Per-sender colour customisation for messages, so messages from specific people can
   be colour-tagged.
 - [ ] Colour customisation for assignments.

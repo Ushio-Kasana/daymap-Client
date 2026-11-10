@@ -149,8 +149,11 @@ pub async fn begin_sign_in(
     Ok(())
 }
 
+/// Windows deadlocks when a WebView2 window is built from a synchronous
+/// command. Tauri runs async commands off the main thread, so this must stay
+/// async even though the body has no await points.
 #[tauri::command]
-pub fn open_auth_window(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+pub async fn open_auth_window(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     let auth_url = {
         let guard = state
             .auth

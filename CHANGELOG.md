@@ -6,6 +6,12 @@ All notable changes to Daymap Client are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-11-10
+
+### Fixed
+
+- Windows sign-in no longer deadlocks while opening the Daymap/EdPass window.
+
 ## [0.1.5] - 2026-11-10
 
 This release includes the 0.1.4 timetable, offline-cache, loading-state and Touch ID
@@ -127,7 +133,8 @@ changes.
 - Assignment details now read the portal's task payload, so resources and the
   upload control are populated correctly.
 
-[Unreleased]: https://github.com/Ushio-Kasana/daymap-Client/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/Ushio-Kasana/daymap-Client/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.6
 [0.1.5]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.5
 [0.1.4]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.4
 [0.1.3]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.3
