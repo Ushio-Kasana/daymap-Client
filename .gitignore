@@ -6,3 +6,6 @@ src-tauri/gen/
 .build/
 .DS_Store
 *.log
+
+# Local-only privacy term list used by scripts/sensitive_gate.py
+scripts/sensitive-terms.local

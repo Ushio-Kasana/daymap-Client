@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+# Scan every reachable commit, not just HEAD, so a term added and removed in an
+# earlier commit cannot ride along in the push.
+exec python3 scripts/sensitive_gate.py --all-history

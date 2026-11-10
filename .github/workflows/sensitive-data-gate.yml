@@ -1,0 +1,24 @@
+name: Sensitive data gate
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Scan history for private data
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan every reachable commit
+        run: python3 scripts/sensitive_gate.py --all-history
+
+      - name: Scan tracked files
+        run: python3 scripts/sensitive_gate.py --all

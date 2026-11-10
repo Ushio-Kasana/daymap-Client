@@ -182,3 +182,17 @@ Not verified here:
 - Windows and Linux compilation and installers. Build those through the included workflow or on
   native machines.
 - Linux Secret Service availability at runtime.
+
+### Privacy gate
+
+Commits and pushes are scanned for credentials, personal details and the names and codes listed in
+`scripts/sensitive-terms.local`:
+
+```bash
+scripts/install-hooks.sh                            # once per clone
+python3 scripts/sensitive_gate.py --staged          # what pre-commit runs
+python3 scripts/sensitive_gate.py --all-history     # what pre-push and CI run
+```
+
+The term list is gitignored, so the identities it protects never enter the repository. The
+`Sensitive data gate` workflow repeats the scan on every push, including bypassed hooks.
