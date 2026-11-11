@@ -34,9 +34,14 @@ finished, add it to `CHANGELOG.md` under `[Unreleased]` and tick it off here.
 
 ## Features
 
-- [ ] **Class notes and class overview.** Make classes clickable to open a class overview,
+- [x] **Class notes and class overview.** Make classes clickable to open a class overview,
   including class notes.
-- [ ] **Assignment results.** Show released results and marks for completed assignments.
+- [x] **Assignment results.** Show released results and marks for completed assignments,
+  alongside the plagiarism check's similarity percentage and a link to the full report.
+- [ ] **Download timetable assignment files in the client.** Clicking an assignment file in
+  the timetable currently opens an external browser and can require an EdPass login. Download
+  it through Daymap instead, with a progress bar. When it finishes, show a popup with options
+  to open the downloaded file or its folder, plus a close button.
 - [ ] Per-sender colour customisation for messages, so messages from specific people can
   be colour-tagged.
 - [ ] Colour customisation for assignments.

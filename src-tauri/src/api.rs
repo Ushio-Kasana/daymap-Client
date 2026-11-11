@@ -9,6 +9,9 @@ use url::Url;
 #[derive(Debug)]
 pub enum ApiError {
     Unauthorized,
+    /// Daymap couldn't be reached, or answered with a temporary failure, so the
+    /// request is worth trying again.
+    Transient(String),
     Message(String),
 }
 
@@ -16,15 +19,31 @@ impl ApiError {
     pub fn message(text: impl Into<String>) -> Self {
         Self::Message(text.into())
     }
+
+    pub fn transient(text: impl Into<String>) -> Self {
+        Self::Transient(text.into())
+    }
+
+    pub fn is_transient(&self) -> bool {
+        matches!(self, Self::Transient(_))
+    }
 }
 
 impl fmt::Display for ApiError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unauthorized => formatter.write_str("Daymap rejected the request. Please sign in again."),
-            Self::Message(text) => formatter.write_str(text),
+            Self::Transient(text) | Self::Message(text) => formatter.write_str(text),
         }
     }
+}
+
+/// Server errors, timeouts and rate limits are the statuses worth retrying;
+/// a 404 or a rejected request is not.
+pub(crate) fn retryable_status(status: StatusCode) -> bool {
+    status.is_server_error()
+        || status == StatusCode::REQUEST_TIMEOUT
+        || status == StatusCode::TOO_MANY_REQUESTS
 }
 
 #[derive(Clone)]
@@ -76,7 +95,7 @@ impl ApiClient {
             .header("Accept", "application/json")
             .send()
             .await
-            .map_err(|_| ApiError::message("Can't reach Daymap. Check your connection and try again."))?;
+            .map_err(|_| ApiError::transient("Can't reach Daymap. Check your connection and try again."))?;
 
         if response.status() == StatusCode::UNAUTHORIZED {
             return Err(ApiError::Unauthorized);
@@ -86,10 +105,15 @@ impl ApiClient {
         let text = response
             .text()
             .await
-            .map_err(|_| ApiError::message("Daymap didn't respond properly."))?;
+            .map_err(|_| ApiError::transient("Daymap didn't respond properly."))?;
 
         if !status.is_success() {
-            return Err(ApiError::message(error_message(&text, status)));
+            let message = error_message(&text, status);
+            return if retryable_status(status) {
+                Err(ApiError::transient(message))
+            } else {
+                Err(ApiError::message(message))
+            };
         }
 
         serde_json::from_str(&text)
@@ -119,7 +143,7 @@ impl ApiClient {
             .json(body)
             .send()
             .await
-            .map_err(|_| ApiError::message("Can't reach Daymap. Check your connection and try again."))?;
+            .map_err(|_| ApiError::transient("Can't reach Daymap. Check your connection and try again."))?;
 
         if response.status() == StatusCode::UNAUTHORIZED {
             return Err(ApiError::Unauthorized);
@@ -129,9 +153,14 @@ impl ApiClient {
         let text = response
             .text()
             .await
-            .map_err(|_| ApiError::message("Daymap didn't respond properly."))?;
+            .map_err(|_| ApiError::transient("Daymap didn't respond properly."))?;
         if !status.is_success() {
-            return Err(ApiError::message(error_message(&text, status)));
+            let message = error_message(&text, status);
+            return if retryable_status(status) {
+                Err(ApiError::transient(message))
+            } else {
+                Err(ApiError::message(message))
+            };
         }
         if text.trim().is_empty() {
             return Ok(Value::Null);
@@ -157,14 +186,19 @@ impl ApiClient {
             .header("Accept", "application/json")
             .send()
             .await
-            .map_err(|_| ApiError::message("Can't reach Daymap. Check your connection and try again."))?;
+            .map_err(|_| ApiError::transient("Can't reach Daymap. Check your connection and try again."))?;
         if response.status() == StatusCode::UNAUTHORIZED {
             return Err(ApiError::Unauthorized);
         }
         let status = response.status();
         if !status.is_success() {
             let text = response.text().await.unwrap_or_default();
-            return Err(ApiError::message(error_message(&text, status)));
+            let message = error_message(&text, status);
+            return if retryable_status(status) {
+                Err(ApiError::transient(message))
+            } else {
+                Err(ApiError::message(message))
+            };
         }
         Ok(())
     }

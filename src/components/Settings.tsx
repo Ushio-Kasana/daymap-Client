@@ -400,7 +400,7 @@ export function Settings({
               <button
                 type="button"
                 className="primary-button update-install-button"
-                onClick={() => void updater.downloadUpdate()}
+                onClick={() => updater.requestDownload()}
                 disabled={active}
               >
                 {active ? (

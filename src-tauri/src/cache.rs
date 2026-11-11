@@ -1,5 +1,6 @@
 use crate::models::{
-    AssignmentBundle, Dashboard, DaymapMessage, DaymapUser, DiaryItem, MessageFolder, MessagePerson,
+    AssignmentBundle, ClassOverview, Dashboard, DaymapMessage, DaymapUser, DiaryItem, MessageFolder,
+    MessagePerson,
 };
 use chrono::{Datelike, Duration as ChronoDuration, NaiveDate};
 use serde::{Deserialize, Serialize};
@@ -13,6 +14,10 @@ const CACHE_VERSION: u32 = 1;
 const PEOPLE_VERSION: u32 = 2;
 const CACHE_FILE: &str = "offline-cache.json";
 const MAILBOX_SYNC_INTERVAL_SECS: i64 = 6 * 60 * 60;
+/// Keep the class cache bounded: notes are read from a class or two at a time,
+/// so older classes and notes can safely drop out.
+const MAX_CLASS_OVERVIEWS: usize = 24;
+const MAX_CLASS_NOTES: usize = 240;
 static CACHE_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,6 +25,20 @@ static CACHE_LOCK: Mutex<()> = Mutex::new(());
 struct CachedWeek {
     saved_at: String,
     lessons: Vec<DiaryItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CachedClass {
+    saved_at: String,
+    overview: ClassOverview,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CachedNote {
+    saved_at: String,
+    html: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,6 +59,10 @@ struct OfflineCache {
     diary_weeks: HashMap<String, CachedWeek>,
     #[serde(default)]
     assignments: HashMap<String, AssignmentBundle>,
+    #[serde(default)]
+    classes: HashMap<String, CachedClass>,
+    #[serde(default)]
+    class_notes: HashMap<String, CachedNote>,
 }
 
 impl OfflineCache {
@@ -57,6 +80,8 @@ impl OfflineCache {
             mailbox_synced_at: None,
             diary_weeks: HashMap::new(),
             assignments: HashMap::new(),
+            classes: HashMap::new(),
+            class_notes: HashMap::new(),
         }
     }
 }
@@ -196,6 +221,64 @@ pub fn assignment(app: &AppHandle, user: &DaymapUser, task_id: i64) -> Option<As
     read(app, user).assignments.get(&task_id.to_string()).cloned()
 }
 
+pub fn save_class(
+    app: &AppHandle,
+    user: &DaymapUser,
+    key: &str,
+    overview: &ClassOverview,
+) -> Result<(), String> {
+    let entry = CachedClass {
+        saved_at: chrono::Utc::now().to_rfc3339(),
+        overview: ClassOverview {
+            offline: false,
+            fetched_at: String::new(),
+            ..overview.clone()
+        },
+    };
+    update(app, user, |cache| {
+        cache.classes.insert(key.to_string(), entry.clone());
+        trim(&mut cache.classes, MAX_CLASS_OVERVIEWS, |entry| {
+            entry.saved_at.clone()
+        });
+    })
+}
+
+/// Returns a saved class marked as offline, so the panel can say the data is
+/// from the cache instead of Daymap.
+pub fn class(app: &AppHandle, user: &DaymapUser, key: &str) -> Option<ClassOverview> {
+    let cached = read(app, user).classes.get(key).cloned()?;
+    Some(ClassOverview {
+        offline: true,
+        fetched_at: cached.saved_at,
+        ..cached.overview
+    })
+}
+
+pub fn save_class_note(
+    app: &AppHandle,
+    user: &DaymapUser,
+    note_id: i64,
+    html: &str,
+) -> Result<(), String> {
+    let entry = CachedNote {
+        saved_at: chrono::Utc::now().to_rfc3339(),
+        html: html.to_string(),
+    };
+    update(app, user, |cache| {
+        cache.class_notes.insert(note_id.to_string(), entry.clone());
+        trim(&mut cache.class_notes, MAX_CLASS_NOTES, |note| {
+            note.saved_at.clone()
+        });
+    })
+}
+
+pub fn class_note(app: &AppHandle, user: &DaymapUser, note_id: i64) -> Option<String> {
+    read(app, user)
+        .class_notes
+        .get(&note_id.to_string())
+        .map(|note| note.html.clone())
+}
+
 pub fn clear(app: &AppHandle) -> Result<(), String> {
     let _guard = CACHE_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let Some(path) = cache_path(app) else {
@@ -205,6 +288,22 @@ pub fn clear(app: &AppHandle) -> Result<(), String> {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(format!("Couldn't clear offline data: {error}")),
+    }
+}
+
+/// Drops the oldest entries once a map is over its limit, so the offline cache
+/// doesn't grow with every class the user ever opened.
+fn trim<T>(items: &mut HashMap<String, T>, limit: usize, saved_at: impl Fn(&T) -> String) {
+    if items.len() <= limit {
+        return;
+    }
+    let mut ages: Vec<(String, String)> = items
+        .iter()
+        .map(|(key, value)| (key.clone(), saved_at(value)))
+        .collect();
+    ages.sort_by(|left, right| right.1.cmp(&left.1));
+    for (key, _) in ages.into_iter().skip(limit) {
+        items.remove(&key);
     }
 }
 

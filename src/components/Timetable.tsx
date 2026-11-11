@@ -20,7 +20,7 @@ import {
   weekOf,
 } from "../dates";
 import { Icon } from "../icons";
-import type { Dashboard, DiaryItem } from "../types";
+import type { ClassTarget, Dashboard, DiaryItem } from "../types";
 
 type ViewMode = "day" | "week";
 
@@ -79,9 +79,10 @@ function LessonMeta({ lesson }: { lesson: DiaryItem }) {
 interface TimetableProps {
   dashboard: Dashboard;
   demo: boolean;
+  onOpenClass?: (target: ClassTarget) => void;
 }
 
-export function Timetable({ dashboard, demo }: TimetableProps) {
+export function Timetable({ dashboard, demo, onOpenClass }: TimetableProps) {
   const [day, setDay] = useState(() => startOfDay(new Date()));
   const [view, setView] = useState<ViewMode>("day");
   // The dashboard only carries a short diary window, so each week the user
@@ -381,7 +382,11 @@ export function Timetable({ dashboard, demo }: TimetableProps) {
                 ) : (
                   <div className="week-lessons">
                     {dayLessons.map((lesson) => (
-                      <WeekLesson key={lesson.id} lesson={lesson} />
+                      <WeekLesson
+                        key={lesson.id}
+                        lesson={lesson}
+                        onOpenClass={onOpenClass}
+                      />
                     ))}
                   </div>
                 )}
@@ -402,6 +407,7 @@ export function Timetable({ dashboard, demo }: TimetableProps) {
               key={lesson.id}
               lesson={lesson}
               schoolCode={dashboard.user.schoolCode}
+              onOpenClass={onOpenClass}
             />
           ))}
         </div>
@@ -410,18 +416,36 @@ export function Timetable({ dashboard, demo }: TimetableProps) {
   );
 }
 
-function WeekLesson({ lesson }: { lesson: DiaryItem }) {
+function WeekLesson({
+  lesson,
+  onOpenClass,
+}: {
+  lesson: DiaryItem;
+  onOpenClass?: (target: ClassTarget) => void;
+}) {
   const { title } = lessonHeading(lesson);
   const status = attendanceStatusForLesson(lesson);
   const attendance = attendanceLabel(status);
   const tint = attendanceTint(status);
+  const canOpenClass = Boolean(onOpenClass) && lesson.type === 2;
 
   return (
     <article className="week-lesson" style={{ borderLeftColor: classTint(lesson.title) }}>
       <span className="week-lesson-time">
         {formatTime(parseDaymapDate(lesson.start))} – {formatTime(parseDaymapDate(lesson.finish))}
       </span>
-      <strong className="week-lesson-title">{title}</strong>
+      {canOpenClass ? (
+        <button
+          type="button"
+          className="lesson-title-button compact"
+          title={`Open ${title}`}
+          onClick={() => onOpenClass?.({ eventId: lesson.id, className: title })}
+        >
+          <strong className="week-lesson-title">{title}</strong>
+        </button>
+      ) : (
+        <strong className="week-lesson-title">{title}</strong>
+      )}
       <LessonMeta lesson={lesson} />
       {attendance && (
         <span className="week-attendance" style={{ color: tint }}>
@@ -432,12 +456,21 @@ function WeekLesson({ lesson }: { lesson: DiaryItem }) {
   );
 }
 
-function LessonRow({ lesson, schoolCode }: { lesson: DiaryItem; schoolCode?: string | null }) {
+function LessonRow({
+  lesson,
+  schoolCode,
+  onOpenClass,
+}: {
+  lesson: DiaryItem;
+  schoolCode?: string | null;
+  onOpenClass?: (target: ClassTarget) => void;
+}) {
   const { title } = lessonHeading(lesson);
   const status = attendanceStatusForLesson(lesson);
   const attendance = attendanceLabel(status);
   const tint = attendanceTint(status);
   const links = extractLinks(lesson.text);
+  const canOpenClass = Boolean(onOpenClass) && lesson.type === 2;
 
   return (
     <article className="lesson-row">
@@ -448,7 +481,19 @@ function LessonRow({ lesson, schoolCode }: { lesson: DiaryItem; schoolCode?: str
       <span className="lesson-row-stripe" style={{ background: classTint(lesson.title) }} />
       <div className="lesson-body">
         <div className="lesson-title-line">
-          <strong>{title}</strong>
+          {canOpenClass ? (
+            <button
+              type="button"
+              className="lesson-title-button"
+              title={`Open ${title}`}
+              onClick={() => onOpenClass?.({ eventId: lesson.id, className: title })}
+            >
+              <strong>{title}</strong>
+              <Icon name="right" size={13} />
+            </button>
+          ) : (
+            <strong>{title}</strong>
+          )}
           {attendance && (
             <span
               className="attendance-pill"

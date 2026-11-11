@@ -21,6 +21,8 @@ import type {
   AssessmentTask,
   AssignmentBundle,
   AssignmentFile,
+  AssignmentResult,
+  ClassTarget,
   Dashboard,
   OverdueSettings,
 } from "../types";
@@ -45,11 +47,13 @@ export function Tasks({
   obtaining,
   overdueSettings,
   onOverdueSettingsChange,
+  onOpenClass,
 }: {
   dashboard: Dashboard;
   obtaining: boolean;
   overdueSettings: OverdueSettings;
   onOverdueSettingsChange: (settings: OverdueSettings) => void;
+  onOpenClass?: (target: ClassTarget) => void;
 }) {
   const [filter, setFilter] = useState<TaskFilter>("upcoming");
   const [query, setQuery] = useState("");
@@ -175,6 +179,7 @@ export function Tasks({
             schoolCode={dashboard.user.schoolCode}
             overdueSettings={overdueSettings}
             onOverdueSettingsChange={onOverdueSettingsChange}
+            onOpenClass={onOpenClass}
           />
         ) : (
           <div className="empty-state">
@@ -193,11 +198,13 @@ function TaskDetail({
   schoolCode,
   overdueSettings,
   onOverdueSettingsChange,
+  onOpenClass,
 }: {
   task: AssessmentTask;
   schoolCode?: string | null;
   overdueSettings: OverdueSettings;
   onOverdueSettingsChange: (settings: OverdueSettings) => void;
+  onOpenClass?: (target: ClassTarget) => void;
 }) {
   const overdue = taskIsOverdue(task, overdueSettings);
   const complete = taskIsComplete(task);
@@ -322,14 +329,42 @@ function TaskDetail({
   };
 
   const description = plainText(assignment?.detail.description);
+  const result = assignment?.result ?? null;
+  const releasedMark =
+    result && (result.mark != null || result.grade)
+      ? [
+          result.grade,
+          result.mark != null
+            ? `${formatMark(result.mark)}${
+                result.maxMark != null ? `/${formatMark(result.maxMark)}` : ""
+              }`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : null;
 
   return (
     <div className="task-detail">
       <div className="detail-badges">
-        {task.className && (
-          <span className="pill outline" style={{ color: classTint(task.className) }}>
-            {task.className.toUpperCase()}
-          </span>
+        {onOpenClass && (task.className || task.classCode) ? (
+          <button
+            type="button"
+            className="pill outline pill-button"
+            style={{ color: classTint(task.className || task.classCode) }}
+            title={`Open ${task.className || task.classCode}`}
+            onClick={() =>
+              onOpenClass({ className: task.className, classCode: task.classCode })
+            }
+          >
+            {(task.className || task.classCode || "").toUpperCase()}
+          </button>
+        ) : (
+          task.className && (
+            <span className="pill outline" style={{ color: classTint(task.className) }}>
+              {task.className.toUpperCase()}
+            </span>
+          )
         )}
         {task.type && <span className="pill outline muted">{task.type.toUpperCase()}</span>}
       </div>
@@ -339,8 +374,12 @@ function TaskDetail({
       <div className="status-box" style={{ borderColor: `${statusTint}55`, background: `${statusTint}14` }}>
         <Icon name={overdue ? "warning" : complete ? "tasks" : "clock"} size={16} />
         <span style={{ color: statusTint }}>{taskShortStatus(task, overdueSettings)}</span>
-        {task.maxMark != null && task.maxMark > 0 && task.graded && (
-          <small>{Math.round(task.maxMark)} marks</small>
+        {releasedMark ? (
+          <small>{releasedMark}</small>
+        ) : (
+          task.maxMark != null &&
+          task.maxMark > 0 &&
+          task.graded && <small>{Math.round(task.maxMark)} marks available</small>
         )}
       </div>
 
@@ -434,6 +473,19 @@ function TaskDetail({
         </section>
       )}
 
+      {assignment && (assignment.results ?? []).length > 0 && (
+        <FileCard
+          title="RESULTS"
+          files={assignment.results ?? []}
+          busyId={downloadingId}
+          onAction={(file) => void download(file)}
+        />
+      )}
+
+      {assignment && (result || assignment.detail.graded) && (
+        <ResultCard result={result ?? {}} graded={assignment.detail.graded} />
+      )}
+
       {actionError && (
         <div className="notice-line error">
           <Icon name="warning" size={13} />
@@ -480,6 +532,66 @@ function TaskDetail({
       </div>
     </div>
   );
+}
+
+/// The released mark and the plagiarism check sit together, since both belong
+/// to the finished submission.
+function ResultCard({ result, graded }: { result: AssignmentResult; graded: boolean }) {
+  const mark = result.mark ?? null;
+  const max = result.maxMark ?? null;
+  const grade = result.grade?.trim() || null;
+  const similarity = result.similarity != null ? Math.round(result.similarity) : null;
+  const reportUrl = result.reportUrl?.trim() || null;
+
+  // Daymap marks a task as graded before the mark is released and reports the
+  // missing mark as -1, so say it isn't out yet instead of showing a mark.
+  if (mark == null && !grade && !graded && similarity == null && !reportUrl) return null;
+
+  return (
+    <section className="detail-card assignment-result">
+      <header className="file-card-head">
+        <h4>RESULT</h4>
+        {grade && <span className="pill outline">{grade}</span>}
+      </header>
+      <div className="result-grid">
+        <div className="result-stat">
+          <span>Mark</span>
+          <strong>
+            {mark != null
+              ? `${formatMark(mark)}${max != null ? ` / ${formatMark(max)}` : ""}`
+              : (grade ?? (
+                  <span className="result-muted">Not released yet</span>
+                ))}
+          </strong>
+        </div>
+        <div className="result-stat">
+          <span>Plagiarism check</span>
+          {similarity != null ? (
+            <strong>{similarity}% similar</strong>
+          ) : (
+            <strong className="result-muted">Not reported</strong>
+          )}
+        </div>
+      </div>
+      {reportUrl && (
+        <button
+          type="button"
+          className="secondary-button compact result-report-button"
+          onClick={() => void openExternal(reportUrl)}
+        >
+          <Icon name="external" size={12} />
+          <span>Open similarity report</span>
+        </button>
+      )}
+      {similarity != null && !reportUrl && (
+        <p className="result-note">Daymap didn't include a link to the full report.</p>
+      )}
+    </section>
+  );
+}
+
+function formatMark(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 function FileCard({

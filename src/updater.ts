@@ -59,8 +59,11 @@ export interface UpdaterController {
   available: AvailableUpdate | null;
   error: string | null;
   dismissed: boolean;
+  keychainNoticeOpen: boolean;
   checkForUpdates: (manual?: boolean) => Promise<void>;
-  downloadUpdate: () => Promise<void>;
+  requestDownload: () => void;
+  confirmDownload: () => Promise<void>;
+  cancelKeychainNotice: () => void;
   dismiss: () => void;
 }
 
@@ -181,6 +184,7 @@ export function useUpdater(): UpdaterController {
   const [available, setAvailable] = useState<AvailableUpdate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const [keychainNoticeOpen, setKeychainNoticeOpen] = useState(false);
   const checkingRef = useRef(false);
   const autoCheckedRef = useRef(false);
   const platform = currentPlatform();
@@ -266,6 +270,7 @@ export function useUpdater(): UpdaterController {
       return;
     }
 
+    setKeychainNoticeOpen(false);
     setDownloading(true);
     setProgress({ downloaded: 0, total: null, percent: null });
     let unlisten: (() => void) | undefined;
@@ -317,7 +322,25 @@ export function useUpdater(): UpdaterController {
     }
   }, [available, downloading, opening]);
 
-  const dismiss = useCallback(() => setDismissed(true), []);
+  const requestDownload = useCallback(() => {
+    if (platform === "macos" && isTauri() && available?.downloadName) {
+      setKeychainNoticeOpen(true);
+      return;
+    }
+    void downloadUpdate();
+  }, [available, downloadUpdate, platform]);
+
+  const confirmDownload = useCallback(async () => {
+    setKeychainNoticeOpen(false);
+    await downloadUpdate();
+  }, [downloadUpdate]);
+
+  const cancelKeychainNotice = useCallback(() => setKeychainNoticeOpen(false), []);
+
+  const dismiss = useCallback(() => {
+    setKeychainNoticeOpen(false);
+    setDismissed(true);
+  }, []);
 
   return {
     currentVersion,
@@ -330,8 +353,11 @@ export function useUpdater(): UpdaterController {
     available,
     error,
     dismissed,
+    keychainNoticeOpen,
     checkForUpdates,
-    downloadUpdate,
+    requestDownload,
+    confirmDownload,
+    cancelKeychainNotice,
     dismiss,
   };
 }

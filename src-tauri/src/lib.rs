@@ -2,15 +2,18 @@ mod api;
 mod assignments;
 mod auth;
 mod cache;
+mod classes;
 mod messages;
 mod models;
 mod overdue;
+mod retry;
 mod touch_id;
 mod updates;
 
 use assignments::{
     cached_assignment, download_assignment_file, load_assignment, upload_assignment_file,
 };
+use classes::{load_class_note, load_class_overview};
 use auth::{
     begin_sign_in, cached_timetable_week, cancel_sign_in, load_cached_dashboard, load_dashboard,
     load_folder_messages, load_message_folders, load_message_recipients, load_timetable,
@@ -51,6 +54,8 @@ pub fn run() {
             sign_out,
             open_external,
             load_assignment,
+            load_class_overview,
+            load_class_note,
             download_assignment_file,
             upload_assignment_file,
             upload_message_attachment,

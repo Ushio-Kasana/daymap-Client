@@ -2,6 +2,7 @@ use crate::api::{
     array_items, field_i64, field_string, normalize_messages, ApiClient, ApiError,
 };
 use crate::models::{DaymapMessage, MessageFolder, MessagePerson, StoredSession};
+use crate::retry;
 use reqwest::{Client, StatusCode};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -12,7 +13,16 @@ use url::Url;
 #[derive(Debug)]
 pub enum MessageError {
     Unauthorized,
+    /// Daymap couldn't be reached, or answered with a temporary failure, so the
+    /// request is worth trying again.
+    Transient(String),
     Message(String),
+}
+
+impl MessageError {
+    pub fn is_transient(&self) -> bool {
+        matches!(self, Self::Transient(_))
+    }
 }
 
 impl fmt::Display for MessageError {
@@ -21,7 +31,7 @@ impl fmt::Display for MessageError {
             Self::Unauthorized => {
                 formatter.write_str("Daymap rejected the request. Please sign in again.")
             }
-            Self::Message(text) => formatter.write_str(text),
+            Self::Transient(text) | Self::Message(text) => formatter.write_str(text),
         }
     }
 }
@@ -30,6 +40,7 @@ impl From<ApiError> for MessageError {
     fn from(error: ApiError) -> Self {
         match error {
             ApiError::Unauthorized => Self::Unauthorized,
+            ApiError::Transient(text) => Self::Transient(text),
             ApiError::Message(text) => Self::Message(text),
         }
     }
@@ -43,6 +54,7 @@ pub struct MailboxSnapshot {
     pub thread_people: HashMap<String, Vec<MessagePerson>>,
 }
 
+#[derive(Clone)]
 pub(crate) struct PortalClient {
     pub(crate) http: Client,
     base_url: String,
@@ -94,7 +106,9 @@ impl PortalClient {
             .send()
             .await
             .map_err(|_| {
-                MessageError::Message("Can't reach Daymap. Check your connection and try again.".to_string())
+                MessageError::Transient(
+                    "Can't reach Daymap. Check your connection and try again.".to_string(),
+                )
             })?;
 
         if response.status() == StatusCode::UNAUTHORIZED {
@@ -105,9 +119,14 @@ impl PortalClient {
         let text = response
             .text()
             .await
-            .map_err(|_| MessageError::Message("Daymap didn't respond properly.".to_string()))?;
+            .map_err(|_| MessageError::Transient("Daymap didn't respond properly.".to_string()))?;
         if !status.is_success() {
-            return Err(MessageError::Message(response_error(&text, status)));
+            let message = response_error(&text, status);
+            return if crate::api::retryable_status(status) {
+                Err(MessageError::Transient(message))
+            } else {
+                Err(MessageError::Message(message))
+            };
         }
         parse_value(&text)
     }
@@ -128,7 +147,9 @@ impl PortalClient {
             .send()
             .await
             .map_err(|_| {
-                MessageError::Message("Can't reach Daymap. Check your connection and try again.".to_string())
+                MessageError::Transient(
+                    "Can't reach Daymap. Check your connection and try again.".to_string(),
+                )
             })?;
 
         if response.status() == StatusCode::UNAUTHORIZED {
@@ -139,9 +160,14 @@ impl PortalClient {
         let text = response
             .text()
             .await
-            .map_err(|_| MessageError::Message("Daymap didn't respond properly.".to_string()))?;
+            .map_err(|_| MessageError::Transient("Daymap didn't respond properly.".to_string()))?;
         if !status.is_success() {
-            return Err(MessageError::Message(response_error(&text, status)));
+            let message = response_error(&text, status);
+            return if crate::api::retryable_status(status) {
+                Err(MessageError::Transient(message))
+            } else {
+                Err(MessageError::Message(message))
+            };
         }
         parse_value(&text)
     }
@@ -422,20 +448,35 @@ pub async fn sync_mailbox(
     token: &str,
     known_threads: &HashSet<i64>,
 ) -> Result<MailboxSnapshot, MessageError> {
-    let folders = load_folders(http, &session.api_base, token).await?;
+    // The mailbox sync runs in the background, so a single failed request is
+    // retried before the folder or thread is left out of the offline cache.
+    let folders = retry::with_retries(
+        retry::BACKGROUND_ATTEMPTS,
+        MessageError::is_transient,
+        || load_folders(http, &session.api_base, token),
+    )
+    .await?;
     let mut messages = HashMap::new();
     let mut message_ids = HashSet::new();
 
     for folder in &folders {
-        let folder_messages =
-            load_folder_pages(http, &session.api_base, token, &folder.id).await?;
+        let folder_messages = retry::with_retries(
+            retry::BACKGROUND_ATTEMPTS,
+            MessageError::is_transient,
+            || load_folder_pages(http, &session.api_base, token, &folder.id),
+        )
+        .await?;
         message_ids.extend(folder_messages.iter().map(|message| message.id));
         messages.insert(folder.id.clone(), folder_messages);
     }
 
-    let mut people = directory_people(http, session, token)
-        .await
-        .unwrap_or_default();
+    let mut people = retry::with_retries(
+        retry::BACKGROUND_ATTEMPTS,
+        MessageError::is_transient,
+        || directory_people(http, session, token),
+    )
+    .await
+    .unwrap_or_default();
     let mut thread_people = HashMap::new();
     let pending: Vec<i64> = message_ids
         .into_iter()
@@ -454,9 +495,13 @@ pub async fn sync_mailbox(
                 let api_base = api_base.clone();
                 let token = token.clone();
                 set.spawn(async move {
-                    let members = load_recipients(&http, &api_base, &token, message_id)
-                        .await
-                        .unwrap_or_default();
+                    let members = retry::with_retries(
+                        retry::BACKGROUND_ATTEMPTS,
+                        MessageError::is_transient,
+                        || load_recipients(&http, &api_base, &token, message_id),
+                    )
+                    .await
+                    .unwrap_or_default();
                     (message_id, members)
                 });
             }
@@ -474,9 +519,13 @@ pub async fn sync_mailbox(
                 let api_base = api_base.clone();
                 let token = token.clone();
                 set.spawn(async move {
-                    let members = load_recipients(&http, &api_base, &token, message_id)
-                        .await
-                        .unwrap_or_default();
+                    let members = retry::with_retries(
+                        retry::BACKGROUND_ATTEMPTS,
+                        MessageError::is_transient,
+                        || load_recipients(&http, &api_base, &token, message_id),
+                    )
+                    .await
+                    .unwrap_or_default();
                     (message_id, members)
                 });
             }

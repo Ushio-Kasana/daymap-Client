@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Dashboard, DaymapUser, OverdueSettings, Section } from "../types";
+import type {
+  ClassTarget,
+  Dashboard,
+  DaymapUser,
+  OverdueSettings,
+  Section,
+} from "../types";
 import { errorText, invoke } from "../api";
 import {
   displayName,
@@ -16,6 +22,7 @@ import { Overview } from "./Overview";
 import { Messages } from "./Messages";
 import { Notices } from "./Notices";
 import { Settings } from "./Settings";
+import { ClassPanel } from "./ClassPanel";
 
 interface AppShellProps {
   user: DaymapUser;
@@ -70,6 +77,11 @@ export function AppShell({
     notOverdueTaskIds: [],
   });
   const [overdueSettingsError, setOverdueSettingsError] = useState<string | null>(null);
+  const [classTarget, setClassTarget] = useState<ClassTarget | null>(null);
+
+  const openClass = useCallback((target: ClassTarget) => {
+    setClassTarget(target);
+  }, []);
 
   useEffect(() => {
     if (demo) {
@@ -245,6 +257,7 @@ export function AppShell({
               goTo={onSection}
               obtaining={loading}
               overdueSettings={overdueSettings}
+              onOpenClass={demo ? undefined : openClass}
             />
           ) : section === "tasks" ? (
             <Tasks
@@ -252,6 +265,7 @@ export function AppShell({
               obtaining={loading}
               overdueSettings={overdueSettings}
               onOverdueSettingsChange={changeOverdueSettings}
+              onOpenClass={demo ? undefined : openClass}
             />
           ) : section === "messages" ? (
             <Messages
@@ -264,7 +278,11 @@ export function AppShell({
           ) : section === "notices" ? (
             <Notices dashboard={dashboard} demo={demo} obtaining={loading} />
           ) : section === "timetable" ? (
-            <Timetable dashboard={dashboard} demo={demo} />
+            <Timetable
+              dashboard={dashboard}
+              demo={demo}
+              onOpenClass={demo ? undefined : openClass}
+            />
           ) : (
             <Settings
               user={user}
@@ -281,6 +299,70 @@ export function AppShell({
             />
           )}
         </main>
+      </div>
+      {updater.keychainNoticeOpen && <UpdateKeychainNotice updater={updater} />}
+      {classTarget && (
+        <ClassPanel
+          target={classTarget}
+          tasks={dashboard?.tasks ?? []}
+          overdueSettings={overdueSettings}
+          onClose={() => setClassTarget(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function UpdateKeychainNotice({ updater }: { updater: UpdaterController }) {
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) updater.cancelKeychainNotice();
+      }}
+    >
+      <div
+        className="modal-card confirm-modal update-keychain-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="keychain-notice-title"
+      >
+        <div className="modal-head">
+          <div>
+            <h2 id="keychain-notice-title">Before you update</h2>
+            <p>macOS may ask for your login keychain password after Daymap restarts.</p>
+          </div>
+        </div>
+        <div className="modal-body update-keychain-body">
+          <p>
+            macOS uses this prompt to let Daymap read your saved session from the keychain.
+            It is not asking for your Daymap password.
+          </p>
+          <p>
+            When it appears, choose <strong>Always Allow</strong> — not <strong>Allow</strong>.
+            That lets Daymap restore your saved session after the update.
+          </p>
+          <p className="muted">You may need your Mac login password to confirm.</p>
+        </div>
+        <div className="modal-footer">
+          <span />
+          <div className="modal-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={updater.cancelKeychainNotice}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="primary-button update-install-button"
+              onClick={() => void updater.confirmDownload()}
+            >
+              Continue to download
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -339,7 +421,7 @@ function UpdateBanner({ updater }: { updater: UpdaterController }) {
         <button
           type="button"
           className="primary-button update-install-button"
-          onClick={() => void updater.downloadUpdate()}
+          onClick={() => updater.requestDownload()}
           disabled={active}
         >
           {actionLabel}

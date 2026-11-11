@@ -6,6 +6,38 @@ All notable changes to Daymap Client are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-11-11
+
+### Added
+
+- macOS update downloads now show a warning before the installer downloads, explaining
+  that macOS may ask for the login keychain password and to choose **Always Allow**.
+- Classes are now clickable in the overview and timetable, and the class label on a task
+  opens a class overview. It shows the class code, subject, teacher and room, an overall
+  attendance percentage instead of a status on every lesson, and the class's assessment
+  tasks.
+- The newest class note opens expanded, with the files the teacher attached to that lesson
+  listed underneath and downloadable from there. Older notes keep their own files and sit
+  behind an **Other notes and files** toggle, so lessons without either aren't listed at
+  all.
+- Class overviews and the notes opened in them are saved in the offline cache, so a class
+  opened while online still opens when Daymap can't be reached, marked **Offline** with the
+  time it was saved.
+- A class's newest notes are now fetched and cached in the background when the class
+  overview opens, so they can be read offline without opening each note first.
+- A finished task now shows the released result: the mark out of the task's maximum and
+  any letter grade, next to the plagiarism check's similarity percentage. When Daymap
+  includes the full report, a button opens it in the browser, and files Daymap attaches to
+  the submission as results are listed under **Results**.
+- A mark Daymap hasn't released yet no longer appears as `-1`, as if it were a real mark;
+  the result says **Not released yet** instead.
+
+### Changed
+
+- Background caching of class notes and mail now retries a temporary failure a few times
+  before giving up, so a dropped connection no longer leaves notes or messages out of the
+  offline cache. Rejected requests and missing data are not retried.
+
 ## [0.1.6] - 2026-11-10
 
 ### Fixed
@@ -133,7 +165,8 @@ changes.
 - Assignment details now read the portal's task payload, so resources and the
   upload control are populated correctly.
 
-[Unreleased]: https://github.com/Ushio-Kasana/daymap-Client/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/Ushio-Kasana/daymap-Client/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.7
 [0.1.6]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.6
 [0.1.5]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.5
 [0.1.4]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.4

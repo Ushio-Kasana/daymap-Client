@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type {
   AssessmentTask,
+  ClassTarget,
   Dashboard,
   DiaryItem,
   DaymapMessage,
@@ -34,9 +35,16 @@ interface OverviewProps {
   goTo: (section: Section) => void;
   obtaining: boolean;
   overdueSettings: OverdueSettings;
+  onOpenClass?: (target: ClassTarget) => void;
 }
 
-export function Overview({ dashboard, goTo, obtaining, overdueSettings }: OverviewProps) {
+export function Overview({
+  dashboard,
+  goTo,
+  obtaining,
+  overdueSettings,
+  onOpenClass,
+}: OverviewProps) {
   const today = new Date();
   const upcoming = sortTasksByDue(
     dashboard.tasks.filter(
@@ -131,7 +139,11 @@ export function Overview({ dashboard, goTo, obtaining, overdueSettings }: Overvi
           ) : (
             <div className="lesson-compact-list">
               {todayLessons.slice(0, 5).map((lesson) => (
-                <CompactLesson key={lesson.id} lesson={lesson} />
+                <CompactLesson
+                  key={lesson.id}
+                  lesson={lesson}
+                  onOpenClass={onOpenClass}
+                />
               ))}
               {todayLessons.length > 5 && (
                 <p className="empty-copy small">
@@ -235,14 +247,33 @@ function CompactTask({
   );
 }
 
-function CompactLesson({ lesson }: { lesson: DiaryItem }) {
+function CompactLesson({
+  lesson,
+  onOpenClass,
+}: {
+  lesson: DiaryItem;
+  onOpenClass?: (target: ClassTarget) => void;
+}) {
   const status = attendanceStatusForLesson(lesson);
   const attendance = attendanceLabel(status);
+  const canOpenClass = Boolean(onOpenClass) && lesson.type === 2;
   return (
     <div className="lesson-compact">
       <div className="lesson-compact-top">
         <span className="lesson-stripe" style={{ background: classTint(lesson.title) }} />
-        <strong>{lesson.title}</strong>
+        {canOpenClass ? (
+          <button
+            type="button"
+            className="lesson-title-button"
+            title={`Open ${lesson.title}`}
+            onClick={() => onOpenClass?.({ eventId: lesson.id, className: lesson.title })}
+          >
+            <strong>{lesson.title}</strong>
+            <Icon name="right" size={12} />
+          </button>
+        ) : (
+          <strong>{lesson.title}</strong>
+        )}
         {attendance && (
           <span
             className="attendance-pill"

@@ -2,7 +2,7 @@ use crate::api::{array_items, field_bool, field_f64, field_i64, field_string};
 use crate::auth::{current_user, with_authenticated, AppState};
 use crate::cache;
 use crate::messages::{MessageError, PortalClient};
-use crate::models::{AssignmentBundle, AssignmentDetail, AssignmentFile};
+use crate::models::{AssignmentBundle, AssignmentDetail, AssignmentFile, AssignmentResult};
 use reqwest::Client;
 use serde_json::{json, Value};
 use std::path::Path;
@@ -99,15 +99,284 @@ pub async fn fetch_assignment(
         .map(str::to_string)
         .or(detail.work_received.clone());
 
+    let mut result = read_result(&detail_object, &detail_value, &submission_value);
+    if result.max_mark.is_none() {
+        result.max_mark = detail.max_mark;
+    }
+
+    // Anything Daymap attaches to the submission as a result: marked work or
+    // the similarity report as a file, when the school releases it that way.
+    let results = submission_value
+        .get("Results")
+        .or_else(|| submission_value.get("results"))
+        .map(|value| normalize_files(value.clone()))
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|file| file.name != "File")
+        .collect();
+
     Ok(AssignmentBundle {
         detail,
         resources,
         work,
         work_received,
+        result,
+        results,
     })
 }
 
-fn normalize_files(value: Value) -> Vec<AssignmentFile> {
+/// Schools name released results and plagiarism checks differently, so keys are
+/// matched case-insensitively. Every value is optional: whatever Daymap didn't
+/// send simply isn't shown.
+const MARK_KEYS: &[&str] = &[
+    "mark",
+    "awardedmark",
+    "achievedmark",
+    "studentmark",
+    "resultmark",
+    "finalmark",
+    "grademark",
+    "score",
+];
+const MAX_MARK_KEYS: &[&str] = &["maxmark", "maximummark", "outof", "totalmark"];
+const GRADE_KEYS: &[&str] = &[
+    "grade",
+    "lettergrade",
+    "resultgrade",
+    "gradecode",
+    "gradeletter",
+    "band",
+];
+const SIMILARITY_KEYS: &[&str] = &[
+    "similarity",
+    "similarityscore",
+    "similaritypercentage",
+    "similarityindex",
+    "plagiarism",
+    "plagiarised",
+    "plagiarismscore",
+    "plagiarismpercentage",
+    "originalityscore",
+    "turnitinsimilarity",
+];
+const REPORT_KEYS: &[&str] = &[
+    "reporturl",
+    "reportlink",
+    "similarityreport",
+    "similarityreporturl",
+    "turnitinreport",
+    "turnitinreporturl",
+    "originalityreport",
+    "plagiarismreport",
+    "report",
+];
+
+fn number_value(value: &Value) -> Option<f64> {
+    match value {
+        Value::Number(number) => number.as_f64(),
+        Value::String(text) => text
+            .trim()
+            .trim_end_matches('%')
+            .trim()
+            .parse::<f64>()
+            .ok(),
+        _ => None,
+    }
+}
+
+fn object_number(value: &Value, keys: &[&str]) -> Option<f64> {
+    let object = value.as_object()?;
+    for (key, entry) in object {
+        if keys.contains(&key.to_lowercase().as_str()) {
+            if let Some(number) = number_value(entry) {
+                return Some(number);
+            }
+        }
+    }
+    None
+}
+
+fn nested_number(value: &Value, keys: &[&str], depth: u8) -> Option<f64> {
+    if depth > 3 {
+        return None;
+    }
+    if let Some(number) = object_number(value, keys) {
+        return Some(number);
+    }
+    match value {
+        Value::Object(object) => object
+            .values()
+            .find_map(|entry| nested_number(entry, keys, depth + 1)),
+        Value::Array(items) => items
+            .iter()
+            .find_map(|entry| nested_number(entry, keys, depth + 1)),
+        _ => None,
+    }
+}
+
+/// Looks at the payload's own fields first, so a rubric criterion's mark nested
+/// deeper down doesn't stand in for the overall result.
+fn find_number(value: &Value, keys: &[&str]) -> Option<f64> {
+    object_number(value, keys).or_else(|| nested_number(value, keys, 0))
+}
+
+fn object_text(value: &Value, keys: &[&str]) -> Option<String> {
+    let object = value.as_object()?;
+    for (key, entry) in object {
+        if !keys.contains(&key.to_lowercase().as_str()) {
+            continue;
+        }
+        let Some(text) = entry.as_str() else { continue };
+        let text = text.trim();
+        if !text.is_empty() {
+            return Some(text.to_string());
+        }
+    }
+    None
+}
+
+fn nested_text(value: &Value, keys: &[&str], depth: u8) -> Option<String> {
+    if depth > 3 {
+        return None;
+    }
+    if let Some(text) = object_text(value, keys) {
+        return Some(text);
+    }
+    match value {
+        Value::Object(object) => object
+            .values()
+            .find_map(|entry| nested_text(entry, keys, depth + 1)),
+        Value::Array(items) => items
+            .iter()
+            .find_map(|entry| nested_text(entry, keys, depth + 1)),
+        _ => None,
+    }
+}
+
+fn find_text(value: &Value, keys: &[&str]) -> Option<String> {
+    object_text(value, keys).or_else(|| nested_text(value, keys, 0))
+}
+
+/// Some responses carry the report only as a bare link, without a field name
+/// that says what it is, so fall back to any link that mentions the check.
+fn matching_url(value: &Value, depth: u8) -> Option<String> {
+    const NEEDLES: &[&str] = &["turnitin", "similarity", "plagiar", "originality"];
+    if depth > 4 {
+        return None;
+    }
+    match value {
+        Value::String(text) => {
+            let lowered = text.to_lowercase();
+            (lowered.starts_with("http") && NEEDLES.iter().any(|needle| lowered.contains(needle)))
+                .then(|| text.clone())
+        }
+        Value::Object(object) => object
+            .values()
+            .find_map(|entry| matching_url(entry, depth + 1)),
+        Value::Array(items) => items
+            .iter()
+            .find_map(|entry| matching_url(entry, depth + 1)),
+        _ => None,
+    }
+}
+
+/// Daymap reports an unreleased mark as `-1` (or similar), so anything outside
+/// zero to the maximum is treated as "not marked yet" rather than as a mark.
+fn valid_mark(mark: f64, max_mark: Option<f64>) -> Option<f64> {
+    if mark < 0.0 {
+        return None;
+    }
+    if max_mark.is_some_and(|max| max > 0.0 && mark > max) {
+        return None;
+    }
+    Some(mark)
+}
+
+/// A similarity score is a percentage; anything outside that isn't one.
+fn valid_similarity(value: f64) -> Option<f64> {
+    (0.0..=100.0).contains(&value).then_some(value)
+}
+
+fn read_result(
+    detail_object: &Value,
+    detail_value: &Value,
+    submission: &Value,
+) -> AssignmentResult {
+    let roots = [detail_object, detail_value, submission];
+    let grade = roots.iter().find_map(|root| {
+        // A numeric "Result" is a mark, not a letter grade.
+        find_text(root, GRADE_KEYS)
+            .filter(|text| number_value(&Value::String(text.clone())).is_none())
+            .filter(|text| text.len() <= 24)
+    });
+    let max_mark = roots
+        .iter()
+        .find_map(|root| find_number(root, MAX_MARK_KEYS));
+    let mark = roots
+        .iter()
+        .find_map(|root| find_number(root, MARK_KEYS))
+        .and_then(|mark| valid_mark(mark, max_mark));
+    let similarity = roots
+        .iter()
+        .find_map(|root| find_number(root, SIMILARITY_KEYS))
+        .or_else(|| roots.iter().find_map(|root| similarity_number(root, 0)))
+        .and_then(valid_similarity);
+    AssignmentResult {
+        mark,
+        max_mark,
+        grade,
+        similarity,
+        report_url: roots.iter().find_map(|root| {
+            find_text(root, REPORT_KEYS)
+                .filter(|text| text.starts_with("http"))
+                .or_else(|| matching_url(root, 0))
+        }),
+    }
+}
+
+/// Similarity checks often arrive as a named object rather than a flat field,
+/// such as `{"SimilarityReport": {"Percentage": 12, "Url": "…"}}`, so the
+/// score inside a similarity-named object is read too.
+fn similarity_number(value: &Value, depth: u8) -> Option<f64> {
+    const NAMES: &[&str] = &[
+        "similarity",
+        "similarityreport",
+        "turnitin",
+        "turnitinreport",
+        "plagiarism",
+        "plagiarismreport",
+        "originality",
+        "originalityreport",
+    ];
+    const SCORE_KEYS: &[&str] = &["percentage", "percent", "score", "value", "similarity", "index"];
+    if depth > 4 {
+        return None;
+    }
+    match value {
+        Value::Object(object) => {
+            for (key, entry) in object {
+                if !NAMES.contains(&key.to_lowercase().as_str()) {
+                    continue;
+                }
+                if let Some(number) = number_value(entry) {
+                    return Some(number);
+                }
+                if let Some(number) = nested_number(entry, SCORE_KEYS, 0) {
+                    return Some(number);
+                }
+            }
+            object
+                .values()
+                .find_map(|entry| similarity_number(entry, depth + 1))
+        }
+        Value::Array(items) => items
+            .iter()
+            .find_map(|entry| similarity_number(entry, depth + 1)),
+        _ => None,
+    }
+}
+
+pub(crate) fn normalize_files(value: Value) -> Vec<AssignmentFile> {
     array_items(
         value,
         &["Files", "files", "Items", "items", "Work", "work", "Results"],

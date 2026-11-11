@@ -118,9 +118,65 @@ export interface AssignmentDetail {
   graded: boolean;
 }
 
+export interface AssignmentResult {
+  mark?: number | null;
+  maxMark?: number | null;
+  grade?: string | null;
+  similarity?: number | null;
+  reportUrl?: string | null;
+}
+
 export interface AssignmentBundle {
   detail: AssignmentDetail;
   resources: AssignmentFile[];
   work: AssignmentFile[];
   workReceived?: string | null;
+  result?: AssignmentResult | null;
+  results?: AssignmentFile[] | null;
+}
+
+export interface ClassNote {
+  noteId: number;
+  eventId: number;
+  title: string;
+  category?: string | null;
+  date?: string | null;
+  period?: string | null;
+  published?: string | null;
+  preview?: string | null;
+}
+
+export interface ClassFile {
+  file: AssignmentFile;
+  eventId: number;
+  date?: string | null;
+  period?: string | null;
+}
+
+export interface ClassAttendance {
+  attended: number;
+  absent: number;
+  excused: number;
+  marked: number;
+  percentage?: number | null;
+}
+
+export interface ClassOverview {
+  id: number;
+  name: string;
+  code?: string | null;
+  subject?: string | null;
+  teachers?: string | null;
+  room?: string | null;
+  attendance: ClassAttendance;
+  notes: ClassNote[];
+  files: ClassFile[];
+  offline?: boolean;
+  fetchedAt?: string | null;
+}
+
+export interface ClassTarget {
+  eventId?: number | null;
+  className?: string | null;
+  classCode?: string | null;
 }

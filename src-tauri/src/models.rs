@@ -152,6 +152,90 @@ pub struct AssignmentDetail {
     pub graded: bool,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssignmentResult {
+    /// The mark the teacher released, with the task's maximum when Daymap
+    /// reports one. Both stay optional: schools name these fields differently.
+    pub mark: Option<f64>,
+    pub max_mark: Option<f64>,
+    /// A letter or band grade, when the school releases one instead of a mark.
+    pub grade: Option<String>,
+    /// Plagiarism check percentage, when the submission was scanned.
+    pub similarity: Option<f64>,
+    /// Link to the full similarity report, when Daymap provides one.
+    pub report_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClassLesson {
+    pub event_id: i64,
+    pub date: Option<String>,
+    pub period: Option<String>,
+    pub room: Option<String>,
+    pub teacher: Option<String>,
+    pub subject: Option<String>,
+    pub attendance_status: Option<i64>,
+    pub note_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClassNote {
+    pub note_id: i64,
+    pub event_id: i64,
+    pub title: String,
+    pub category: Option<String>,
+    pub date: Option<String>,
+    pub period: Option<String>,
+    pub published: Option<String>,
+    pub preview: Option<String>,
+}
+
+/// Attendance for the lessons the class overview loaded. `marked` counts the
+/// lessons Daymap has marked present or absent; excused lessons are reported
+/// separately so they don't drag the percentage down.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClassAttendance {
+    pub attended: i64,
+    pub absent: i64,
+    pub excused: i64,
+    pub marked: i64,
+    pub percentage: Option<i64>,
+}
+
+/// A file a teacher attached to a lesson. `file` keeps the same shape the
+/// assignment resources use, so both can share the download command.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClassFile {
+    pub file: AssignmentFile,
+    pub event_id: i64,
+    pub date: Option<String>,
+    pub period: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClassOverview {
+    pub id: i64,
+    pub name: String,
+    pub code: Option<String>,
+    pub subject: Option<String>,
+    pub teachers: Option<String>,
+    pub room: Option<String>,
+    pub attendance: ClassAttendance,
+    pub notes: Vec<ClassNote>,
+    #[serde(default)]
+    pub files: Vec<ClassFile>,
+    #[serde(default)]
+    pub offline: bool,
+    #[serde(default)]
+    pub fetched_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssignmentBundle {
@@ -159,6 +243,12 @@ pub struct AssignmentBundle {
     pub resources: Vec<AssignmentFile>,
     pub work: Vec<AssignmentFile>,
     pub work_received: Option<String>,
+    #[serde(default)]
+    pub result: AssignmentResult,
+    /// Files Daymap attaches to the submission as results, such as marked work
+    /// or the similarity report when the school releases it as a file.
+    #[serde(default)]
+    pub results: Vec<AssignmentFile>,
 }
 
 #[derive(Debug, Deserialize)]
