@@ -32,6 +32,11 @@ export interface OverdueSettings {
   notOverdueTaskIds: number[];
 }
 
+export interface CacheSettings {
+  content: boolean;
+  contacts: boolean;
+}
+
 export interface DaymapMessage {
   id: number;
   subject: string;

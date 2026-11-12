@@ -410,22 +410,39 @@ pub(crate) fn normalize_files(value: Value) -> Vec<AssignmentFile> {
     .collect()
 }
 
-pub async fn fetch_file(
+/// Progress event for a file the user asked to download.
+const DOWNLOAD_EVENT: &str = "assignment-download-progress";
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadProgress {
+    file_id: i64,
+    downloaded: u64,
+    total: Option<u64>,
+}
+
+/// Streams a file to disk so the timetable can show byte progress, instead of
+/// holding the whole response in memory until it finishes.
+async fn fetch_file_to_path(
+    app: &tauri::AppHandle,
     http: &Client,
     api_base: &str,
     token: &str,
     file_id: i64,
-) -> Result<Vec<u8>, MessageError> {
+    destination: &std::path::Path,
+) -> Result<(), MessageError> {
+    use tauri::Emitter;
+    use tokio::io::AsyncWriteExt;
+
     let portal = PortalClient::new(http.clone(), api_base)?;
     let url = portal.url(&format!("/lms/api/files/file/{file_id}"))?;
-    let response = portal
+    let mut response = portal
         .http
         .get(url)
         .bearer_auth(token)
         .send()
         .await
         .map_err(|_| failure("Couldn't download the file. Check your connection and try again."))?;
-
     if response.status().as_u16() == 401 {
         return Err(MessageError::Unauthorized);
     }
@@ -436,11 +453,31 @@ pub async fn fetch_file(
         )));
     }
 
-    response
-        .bytes()
+    let total = response.content_length().filter(|size| *size > 0);
+    let mut file = tokio::fs::File::create(destination)
         .await
-        .map(|bytes| bytes.to_vec())
-        .map_err(|_| failure("The download didn't finish."))
+        .map_err(|error| failure(format!("Couldn't save the file: {error}")))?;
+    let mut downloaded = 0u64;
+    let _ = app.emit(DOWNLOAD_EVENT, DownloadProgress { file_id, downloaded, total });
+
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| failure("The download stopped part-way through."))?
+    {
+        file.write_all(&chunk)
+            .await
+            .map_err(|error| failure(format!("Couldn't save the file: {error}")))?;
+        downloaded += chunk.len() as u64;
+        let _ = app.emit(DOWNLOAD_EVENT, DownloadProgress { file_id, downloaded, total });
+    }
+    file.flush()
+        .await
+        .map_err(|error| failure(format!("Couldn't finish saving the file: {error}")))?;
+    if downloaded == 0 {
+        return Err(failure("Daymap returned an empty file."));
+    }
+    Ok(())
 }
 
 /// Uploads student work through Daymap's SAS flow: ask Daymap for a
@@ -612,6 +649,7 @@ pub fn cached_assignment(
 
 #[tauri::command]
 pub async fn download_assignment_file(
+    app: tauri::AppHandle,
     file_id: i64,
     destination: String,
     state: State<'_, AppState>,
@@ -620,16 +658,48 @@ pub async fn download_assignment_file(
         return Err("Choose where to save the file first.".to_string());
     }
     let http = state.http.clone();
-    with_authenticated(state.inner(), move |session, token| {
+    let path = std::path::PathBuf::from(&destination);
+    let result = with_authenticated(state.inner(), move |session, token| {
         let http = http.clone();
-        let destination = destination.clone();
+        let app = app.clone();
+        let path = path.clone();
         async move {
-            let bytes = fetch_file(&http, &session.api_base, &token, file_id).await?;
-            std::fs::write(&destination, bytes)
-                .map_err(|error| failure(format!("Couldn't save the file: {error}")))
+            fetch_file_to_path(&app, &http, &session.api_base, &token, file_id, &path).await
         }
     })
-    .await
+    .await;
+    if result.is_err() {
+        // Don't leave a half-written file behind after a failed download.
+        let _ = std::fs::remove_file(&destination);
+    }
+    result
+}
+
+/// Opens a file the user just downloaded, from the completion popup.
+#[tauri::command]
+pub fn open_downloaded_file(path: String) -> Result<(), String> {
+    let path = std::path::PathBuf::from(&path);
+    if !path.is_file() {
+        return Err("That file is no longer there. Download it again.".to_string());
+    }
+    open::that_detached(&path).map_err(|error| format!("Couldn't open the file: {error}"))
+}
+
+/// Opens the folder that holds a downloaded file.
+#[tauri::command]
+pub fn open_downloaded_folder(path: String) -> Result<(), String> {
+    let path = std::path::PathBuf::from(&path);
+    let folder = if path.is_dir() {
+        path
+    } else {
+        path.parent()
+            .map(std::path::Path::to_path_buf)
+            .ok_or_else(|| "That file is no longer there.".to_string())?
+    };
+    if !folder.is_dir() {
+        return Err("That folder is no longer there.".to_string());
+    }
+    open::that_detached(&folder).map_err(|error| format!("Couldn't open the folder: {error}"))
 }
 
 #[tauri::command]

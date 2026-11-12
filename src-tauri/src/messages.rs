@@ -447,6 +447,7 @@ pub async fn sync_mailbox(
     session: &StoredSession,
     token: &str,
     known_threads: &HashSet<i64>,
+    include_people: bool,
 ) -> Result<MailboxSnapshot, MessageError> {
     // The mailbox sync runs in the background, so a single failed request is
     // retried before the folder or thread is left out of the offline cache.
@@ -470,20 +471,26 @@ pub async fn sync_mailbox(
         messages.insert(folder.id.clone(), folder_messages);
     }
 
-    let mut people = retry::with_retries(
-        retry::BACKGROUND_ATTEMPTS,
-        MessageError::is_transient,
-        || directory_people(http, session, token),
-    )
-    .await
-    .unwrap_or_default();
+    // Contact caching off: skip the directory and the per-thread name lookups
+    // and only keep the mailbox content.
+    let mut people = if include_people {
+        retry::with_retries(
+            retry::BACKGROUND_ATTEMPTS,
+            MessageError::is_transient,
+            || directory_people(http, session, token),
+        )
+        .await
+        .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     let mut thread_people = HashMap::new();
     let pending: Vec<i64> = message_ids
         .into_iter()
         .filter(|message_id| !known_threads.contains(message_id))
         .collect();
 
-    if !pending.is_empty() {
+    if include_people && !pending.is_empty() {
         let http = http.clone();
         let api_base = session.api_base.clone();
         let token = token.to_string();

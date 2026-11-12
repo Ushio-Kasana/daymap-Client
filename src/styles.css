@@ -3349,7 +3349,8 @@ code {
   font-size: 9.5px;
 }
 
-.touch-id-switch {
+.touch-id-switch,
+.settings-switch {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -3363,7 +3364,8 @@ code {
   transition: background 140ms ease, border-color 140ms ease;
 }
 
-.touch-id-switch span {
+.touch-id-switch span,
+.settings-switch span {
   display: block;
   width: 16px;
   height: 16px;
@@ -3372,17 +3374,20 @@ code {
   transition: transform 140ms ease, background 140ms ease;
 }
 
-.touch-id-switch.on {
+.touch-id-switch.on,
+.settings-switch.on {
   border-color: var(--accent);
   background: var(--accent);
 }
 
-.touch-id-switch.on span {
+.touch-id-switch.on span,
+.settings-switch.on span {
   background: #fff;
   transform: translateX(16px);
 }
 
-.touch-id-switch:disabled {
+.touch-id-switch:disabled,
+.settings-switch:disabled {
   cursor: default;
   opacity: 0.55;
 }
@@ -3406,6 +3411,34 @@ code {
   font-size: 9px;
   line-height: 1.45;
   margin-top: 9px;
+}
+
+.link-chip small {
+  font-size: 9px;
+  opacity: 0.75;
+}
+
+.lesson-download {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 9.5px;
+}
+
+.lesson-download-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.download-done-path {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .overdue-class-list {

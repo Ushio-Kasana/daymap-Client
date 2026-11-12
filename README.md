@@ -28,9 +28,9 @@ Each button opens the latest release. Pick the file for your platform:
 
 | Platform | Files |
 | --- | --- |
-| macOS | `.dmg` (Apple silicon) |
-| Windows | `.exe` installer or `.msi` |
-| Linux | `.AppImage`, `.deb` or `.rpm` |
+| macOS | `.dmg` — Apple silicon and Intel |
+| Windows | `.exe` installer or `.msi` — x64, ARM64 and 32-bit |
+| Linux | `.AppImage`, `.deb` or `.rpm` — x86_64 and ARM64 |
 
 ## Release notes
 
@@ -65,7 +65,7 @@ Working today:
 - ✅ Day and Week timetable views with rooms, teachers and substitutes, and a week picker.
 - ✅ In-app update checks against GitHub releases, with download progress and the matching platform installer.
 - ✅ Messages with folders, search, compose, replies and file attachments.
-- ✅ Contact search across staff, students and parents.
+- ✅ Contact search across staff and students.
 - ✅ School notices with a reading view.
 - ✅ A token-free offline cache, so the last dashboard still opens without a connection.
 - ✅ A sample-data preview mode for looking around without an account.
@@ -129,15 +129,18 @@ Finder layout enabled on CI so those settings are included in published installe
 
 Windows and Linux installers should be produced on their respective operating systems, or
 through the included GitHub Actions workflow. The workflow is manual-only: dispatch **Build
-desktop apps** from `main` to build all three platforms. Leave `release_tag` empty for test
-artifacts, or set it to a version tag to publish flat installers to a release using the matching
+desktop apps** from `main` to build every target — macOS Apple silicon and Intel, Windows x64,
+ARM64 and 32-bit, and Linux x86_64 and ARM64. Leave `release_tag` empty for test artifacts, or
+set it to a version tag to publish flat installers to a release using the matching
 `CHANGELOG.md` section as the release body. Branch and tag pushes do not trigger a build.
 
 ### Update checks
 
 The desktop app asks the public GitHub Releases API for the latest published release at startup
 and when you choose **Check for updates** in Settings. If the tag is newer than the running
-version, the app offers the matching installer for the current platform.
+version, the app offers the matching installer for the current platform. It also asks the Rust
+side for the computer's architecture, so a release carrying several installers offers the one
+built for that machine.
 
 Daymap downloads the installer into your Downloads folder and shows byte/percentage progress in
 the update banner and Settings. It checks the file against GitHub's SHA-256 asset digest when one
@@ -156,7 +159,7 @@ API allows 60 requests per hour per IP; normal use is one request per launch or 
 To publish an update, bump the version in `package.json`, `src-tauri/Cargo.toml` and
 `src-tauri/tauri.conf.json`, move the relevant `CHANGELOG.md` entries under the new version,
 then commit and push `main`. Run **Build desktop apps** from `main` with `release_tag` set to the
-matching version tag. The workflow publishes the installers and creates the release the app will
+matching version tag.The workflow publishes the installers and creates the release the app will
 offer.
 
 ### Sign-in and security

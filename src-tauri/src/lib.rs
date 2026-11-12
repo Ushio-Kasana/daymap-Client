@@ -6,14 +6,16 @@ mod classes;
 mod messages;
 mod models;
 mod overdue;
+mod prefs;
 mod retry;
 mod touch_id;
 mod updates;
 
 use assignments::{
-    cached_assignment, download_assignment_file, load_assignment, upload_assignment_file,
+    cached_assignment, download_assignment_file, load_assignment, open_downloaded_file,
+    open_downloaded_folder, upload_assignment_file,
 };
-use classes::{load_class_note, load_class_overview};
+use classes::{load_class_note, load_class_overview, load_lesson_files};
 use auth::{
     begin_sign_in, cached_timetable_week, cancel_sign_in, load_cached_dashboard, load_dashboard,
     load_folder_messages, load_message_folders, load_message_recipients, load_timetable,
@@ -22,6 +24,7 @@ use auth::{
     touch_id_enabled, upload_message_attachment, AppState,
 };
 use overdue::{load_overdue_settings, save_overdue_settings};
+use prefs::{host_arch, load_cache_settings, save_cache_settings};
 use updates::{download_update, open_update_installer, quit_app};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -38,6 +41,8 @@ pub fn run() {
             set_touch_id_enabled,
             load_overdue_settings,
             save_overdue_settings,
+            load_cache_settings,
+            save_cache_settings,
             load_dashboard,
             load_cached_dashboard,
             load_timetable,
@@ -56,11 +61,15 @@ pub fn run() {
             load_assignment,
             load_class_overview,
             load_class_note,
+            load_lesson_files,
             download_assignment_file,
+            open_downloaded_file,
+            open_downloaded_folder,
             upload_assignment_file,
             upload_message_attachment,
             download_update,
             open_update_installer,
+            host_arch,
             quit_app
         ])
         .run(tauri::generate_context!())

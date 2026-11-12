@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { errorText, invoke, isTauri } from "../api";
 import { displayName, initials, schoolLabel } from "../dates";
 import { Icon } from "../icons";
-import type { AssessmentTask, DaymapUser, OverdueSettings } from "../types";
+import type { AssessmentTask, CacheSettings, DaymapUser, OverdueSettings } from "../types";
 import { installHint, type UpdaterController } from "../updater";
 
 interface SettingsProps {
@@ -43,6 +43,12 @@ export function Settings({
   const [touchIdEnabled, setTouchIdEnabled] = useState(true);
   const [touchIdBusy, setTouchIdBusy] = useState(false);
   const [touchIdError, setTouchIdError] = useState<string | null>(null);
+  const [cacheSettings, setCacheSettings] = useState<CacheSettings>({
+    content: true,
+    contacts: false,
+  });
+  const [cacheSettingsBusy, setCacheSettingsBusy] = useState(false);
+  const [cacheSettingsError, setCacheSettingsError] = useState<string | null>(null);
   const [classInput, setClassInput] = useState("");
   const available = updater.available;
   const active = updater.downloading || updater.opening;
@@ -58,6 +64,7 @@ export function Settings({
     ? installHint(updater.platform, Boolean(available.downloadName))
     : installHint(updater.platform);
   const showTouchId = updater.platform === "macos" && isTauri() && !demo;
+  const showCaching = isTauri() && !demo;
   const classOptions = useMemo(() => {
     const options = new Set<string>();
     for (const task of tasks) {
@@ -106,6 +113,21 @@ export function Settings({
     };
   }, [showTouchId]);
 
+  useEffect(() => {
+    if (!showCaching) return;
+    let cancelled = false;
+    void invoke<CacheSettings>("load_cache_settings")
+      .then((settings) => {
+        if (!cancelled) setCacheSettings(settings);
+      })
+      .catch((cause) => {
+        if (!cancelled) setCacheSettingsError(errorText(cause));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showCaching]);
+
   const toggleTouchId = async () => {
     if (touchIdBusy) return;
     const next = !touchIdEnabled;
@@ -119,6 +141,22 @@ export function Settings({
       setTouchIdError(errorText(cause));
     } finally {
       setTouchIdBusy(false);
+    }
+  };
+
+  const toggleCache = async (key: "content" | "contacts") => {
+    if (cacheSettingsBusy) return;
+    const next = { ...cacheSettings, [key]: !cacheSettings[key] };
+    setCacheSettings(next);
+    setCacheSettingsBusy(true);
+    setCacheSettingsError(null);
+    try {
+      await invoke("save_cache_settings", { settings: next });
+    } catch (cause) {
+      setCacheSettings(cacheSettings);
+      setCacheSettingsError(errorText(cause));
+    } finally {
+      setCacheSettingsBusy(false);
     }
   };
 
@@ -450,6 +488,67 @@ export function Settings({
           </span>
         </div>
       </section>
+
+      {showCaching && (
+        <section className="settings-card">
+          <div className="settings-card-title">
+            <span>Caching</span>
+          </div>
+          <p className="settings-copy">
+            Daymap can keep content and contact names on this computer so they open without a
+            connection. Turning either off deletes what is already saved and stops it being
+            saved again. Your Daymap account is not affected.
+          </p>
+          <div className="settings-row">
+            <div>
+              <strong>Cache content</strong>
+              <span>
+                Dashboard, timetable, tasks, messages, class notes and assignment details.
+              </span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={cacheSettings.content}
+              aria-label="Cache content"
+              className={`settings-switch ${cacheSettings.content ? "on" : ""}`}
+              onClick={() => void toggleCache("content")}
+              disabled={cacheSettingsBusy}
+            >
+              <span />
+            </button>
+          </div>
+          <div className="settings-row">
+            <div>
+              <strong>Cache contacts</strong>
+              <span>Staff and student names used for recipient search.</span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={cacheSettings.contacts}
+              aria-label="Cache contacts"
+              className={`settings-switch ${cacheSettings.contacts ? "on" : ""}`}
+              onClick={() => void toggleCache("contacts")}
+              disabled={cacheSettingsBusy}
+            >
+              <span />
+            </button>
+          </div>
+          {cacheSettingsError && (
+            <p className="settings-update-error" role="alert">
+              {cacheSettingsError}
+            </p>
+          )}
+          <div className="settings-note">
+            <Icon name="info" size={13} />
+            <span>
+              With contact caching off, names are requested from Daymap on each search, the
+              same way the Daymap website does it.
+            </span>
+          </div>
+        </section>
+      )}
 
       <section className="settings-card">
         <div className="settings-card-title">

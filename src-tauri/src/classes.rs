@@ -628,3 +628,34 @@ pub async fn load_class_note(
         },
     }
 }
+
+/// Files a teacher attached to one lesson, for the timetable. This is the same
+/// file list the class overview shows under a lesson, without the lesson plans.
+#[tauri::command]
+pub async fn load_lesson_files(
+    event_id: i64,
+    state: State<'_, AppState>,
+) -> Result<Vec<AssignmentFile>, String> {
+    if event_id <= 0 {
+        return Err("That lesson is not valid.".to_string());
+    }
+    let http = state.http.clone();
+    with_authenticated(state.inner(), move |session, token| {
+        let http = http.clone();
+        async move {
+            let portal = PortalClient::new(http, &session.api_base)?;
+            let value = portal
+                .get(
+                    "/lms/api/files/filelist",
+                    &token,
+                    &[
+                        ("fileType", "3".to_string()),
+                        ("linkId", event_id.to_string()),
+                    ],
+                )
+                .await?;
+            Ok(normalize_files(value))
+        }
+    })
+    .await
+}

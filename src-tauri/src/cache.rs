@@ -2,6 +2,7 @@ use crate::models::{
     AssignmentBundle, ClassOverview, Dashboard, DaymapMessage, DaymapUser, DiaryItem, MessageFolder,
     MessagePerson,
 };
+use crate::prefs;
 use chrono::{Datelike, Duration as ChronoDuration, NaiveDate};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -111,6 +112,40 @@ pub fn user_key(user: &DaymapUser) -> String {
     }
 }
 
+/// Applies the Settings cache switches to what may be read back: a disabled
+/// category behaves as if it had never been saved.
+fn filter(mut cache: OfflineCache, app: &AppHandle) -> OfflineCache {
+    let settings = prefs::load(app);
+    if !settings.content {
+        cache.dashboard = None;
+        cache.folders.clear();
+        cache.folder_messages.clear();
+        cache.diary_weeks.clear();
+        cache.assignments.clear();
+        cache.classes.clear();
+        cache.class_notes.clear();
+        cache.mailbox_synced_at = None;
+    }
+    if !settings.contacts {
+        cache.people.clear();
+        cache.thread_people.clear();
+    } else {
+        // Parents are never shown, even if an older cache still holds them.
+        retain_visible(&mut cache.people);
+        for members in cache.thread_people.values_mut() {
+            retain_visible(members);
+        }
+    }
+    cache
+}
+
+/// Drops parent contacts before they are saved or handed back. Staff, students
+/// and unclassified entries stay, so a school with different type codes still
+/// gets a usable list.
+pub(crate) fn retain_visible(people: &mut Vec<MessagePerson>) {
+    people.retain(|person| !person.is_parent());
+}
+
 pub fn load_dashboard(app: &AppHandle, user: &DaymapUser) -> Option<Dashboard> {
     let mut dashboard = read(app, user).dashboard?;
     dashboard.offline = true;
@@ -122,6 +157,9 @@ pub fn save_dashboard(
     user: &DaymapUser,
     dashboard: &Dashboard,
 ) -> Result<(), String> {
+    if !prefs::content_enabled(app) {
+        return Ok(());
+    }
     let mut dashboard = dashboard.clone();
     dashboard.offline = false;
     update(app, user, |cache| {
@@ -135,6 +173,9 @@ pub fn save_diary_week(
     week_start: &str,
     lessons: &[DiaryItem],
 ) -> Result<(), String> {
+    if !prefs::content_enabled(app) {
+        return Ok(());
+    }
     let key = week_start.to_string();
     let week = CachedWeek {
         saved_at: chrono::Utc::now().to_rfc3339(),
@@ -162,6 +203,9 @@ pub fn save_dashboard_weeks(
     from: &str,
     to: &str,
 ) -> Result<(), String> {
+    if !prefs::content_enabled(app) {
+        return Ok(());
+    }
     let Some(from) = NaiveDate::parse_from_str(from, "%Y-%m-%d").ok() else {
         return Ok(());
     };
@@ -210,6 +254,9 @@ pub fn save_assignment(
     task_id: i64,
     bundle: &AssignmentBundle,
 ) -> Result<(), String> {
+    if !prefs::content_enabled(app) {
+        return Ok(());
+    }
     let key = task_id.to_string();
     let bundle = bundle.clone();
     update(app, user, |cache| {
@@ -227,6 +274,9 @@ pub fn save_class(
     key: &str,
     overview: &ClassOverview,
 ) -> Result<(), String> {
+    if !prefs::content_enabled(app) {
+        return Ok(());
+    }
     let entry = CachedClass {
         saved_at: chrono::Utc::now().to_rfc3339(),
         overview: ClassOverview {
@@ -260,6 +310,9 @@ pub fn save_class_note(
     note_id: i64,
     html: &str,
 ) -> Result<(), String> {
+    if !prefs::content_enabled(app) {
+        return Ok(());
+    }
     let entry = CachedNote {
         saved_at: chrono::Utc::now().to_rfc3339(),
         html: html.to_string(),
@@ -277,6 +330,25 @@ pub fn class_note(app: &AppHandle, user: &DaymapUser, note_id: i64) -> Option<St
         .class_notes
         .get(&note_id.to_string())
         .map(|note| note.html.clone())
+}
+
+/// Clears the parts of the saved cache the user has just switched off. These
+/// settings live outside the cache file, so this works without a session.
+pub fn apply_cache_settings(app: &AppHandle) -> Result<(), String> {
+    let _guard = CACHE_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let Some(path) = cache_path(app) else {
+        return Ok(());
+    };
+    let Ok(data) = fs::read(&path) else {
+        return Ok(());
+    };
+    let Ok(cache) = serde_json::from_slice::<OfflineCache>(&data) else {
+        return Ok(());
+    };
+    if cache.version != CACHE_VERSION {
+        return Ok(());
+    }
+    write(app, &filter(cache, app))
 }
 
 pub fn clear(app: &AppHandle) -> Result<(), String> {
@@ -323,7 +395,7 @@ pub fn save_folders(
     user: &DaymapUser,
     folders: &[MessageFolder],
 ) -> Result<(), String> {
-    if folders.is_empty() {
+    if folders.is_empty() || !prefs::content_enabled(app) {
         return Ok(());
     }
     let folders = folders.to_vec();
@@ -350,6 +422,9 @@ pub fn save_folder_messages(
     folder_id: &str,
     messages: &[DaymapMessage],
 ) -> Result<(), String> {
+    if !prefs::content_enabled(app) {
+        return Ok(());
+    }
     let folder_id = folder_id.to_string();
     let messages = messages.to_vec();
     update(app, user, |cache| {
@@ -375,7 +450,14 @@ pub fn record_thread_people(
     message_id: i64,
     people: &[MessagePerson],
 ) -> Result<(), String> {
-    let people = people.to_vec();
+    if !prefs::contacts_enabled(app) {
+        return Ok(());
+    }
+    let mut people = people.to_vec();
+    retain_visible(&mut people);
+    if people.is_empty() {
+        return Ok(());
+    }
     update(app, user, |cache| {
         cache.thread_people.insert(message_id.to_string(), people.clone());
         merge_into(&mut cache.people, &people);
@@ -387,16 +469,23 @@ pub fn merge_people(
     user: &DaymapUser,
     people: &[MessagePerson],
 ) -> Result<(), String> {
+    if people.is_empty() || !prefs::contacts_enabled(app) {
+        return Ok(());
+    }
+    let mut people = people.to_vec();
+    retain_visible(&mut people);
     if people.is_empty() {
         return Ok(());
     }
-    let people = people.to_vec();
     update(app, user, |cache| {
         merge_into(&mut cache.people, &people);
     })
 }
 
 pub fn search_people(app: &AppHandle, user: &DaymapUser, term: &str) -> Vec<MessagePerson> {
+    if !prefs::contacts_enabled(app) {
+        return Vec::new();
+    }
     let term = term.trim().to_lowercase();
     if term.is_empty() {
         return Vec::new();
@@ -431,6 +520,11 @@ pub fn search_people(app: &AppHandle, user: &DaymapUser, term: &str) -> Vec<Mess
 }
 
 pub fn mailbox_needs_sync(app: &AppHandle, user: &DaymapUser) -> bool {
+    // The mailbox copy is content, so it isn't synced while content caching is
+    // off.
+    if !prefs::content_enabled(app) {
+        return false;
+    }
     let cache = read(app, user);
     // Rebuild an empty thread index even if an earlier sync recorded a timestamp.
     if cache.thread_people.values().all(Vec::is_empty) && !cache.folder_messages.is_empty() {
@@ -443,6 +537,9 @@ pub fn mailbox_needs_sync(app: &AppHandle, user: &DaymapUser) -> bool {
 }
 
 pub fn thread_ids(app: &AppHandle, user: &DaymapUser) -> HashSet<i64> {
+    if !prefs::contacts_enabled(app) {
+        return HashSet::new();
+    }
     read(app, user)
         .thread_people
         .into_iter()
@@ -459,22 +556,37 @@ pub fn save_mailbox(
     people: &[MessagePerson],
     thread_people: &HashMap<String, Vec<MessagePerson>>,
 ) -> Result<(), String> {
+    let content = prefs::content_enabled(app);
+    let contacts = prefs::contacts_enabled(app);
+    if !content && !contacts {
+        return Ok(());
+    }
     let folders = folders.to_vec();
     let messages = messages.clone();
-    let people = people.to_vec();
-    let thread_people = thread_people.clone();
+    let mut people = people.to_vec();
+    retain_visible(&mut people);
+    let mut thread_people = thread_people.clone();
+    for members in thread_people.values_mut() {
+        retain_visible(members);
+    }
     update(app, user, |cache| {
-        if !folders.is_empty() {
-            cache.folders = folders.clone();
+        if content {
+            if !folders.is_empty() {
+                cache.folders = folders.clone();
+            }
+            cache.folder_messages = messages.clone();
+            cache.mailbox_synced_at = Some(chrono::Utc::now().timestamp());
         }
-        cache.folder_messages = messages.clone();
-        for (message_id, members) in &thread_people {
-            cache
-                .thread_people
-                .insert(message_id.clone(), members.clone());
+        if contacts {
+            for (message_id, members) in &thread_people {
+                if !members.is_empty() {
+                    cache
+                        .thread_people
+                        .insert(message_id.clone(), members.clone());
+                }
+            }
+            merge_into(&mut cache.people, &people);
         }
-        merge_into(&mut cache.people, &people);
-        cache.mailbox_synced_at = Some(chrono::Utc::now().timestamp());
     })
 }
 
@@ -506,7 +618,7 @@ fn read(app: &AppHandle, user: &DaymapUser) -> OfflineCache {
                 cache.mailbox_synced_at = None;
                 cache.people_version = PEOPLE_VERSION;
             }
-            cache
+            filter(cache, app)
         }
         _ => OfflineCache::new(key),
     }

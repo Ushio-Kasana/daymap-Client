@@ -4,7 +4,26 @@ All notable changes to Daymap Client are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.8] - 2026-11-12
+
+### Added
+
+- Settings has **Cache content** and **Cache contacts** switches. With content caching off,
+  the dashboard, timetable, tasks, messages, class notes and assignment details are no longer
+  saved on this computer. Contact caching is off by default, so recipient search asks Daymap
+  on every search the way the Daymap website does instead of showing everyone already saved;
+  turning it on saves staff and student names. Turning a switch off also deletes the data it
+  covered from the saved copy.
+- Timetable lessons now list the files a teacher attached. Choosing one asks where to save it,
+  downloads it through Daymap instead of opening a browser and needing an EdPass login again,
+  shows progress on the lesson, and finishes with a popup offering **Open file**, **Show in
+  folder** or **Close**. Daymap file links in a lesson's text download the same way.
+
+### Changed
+
+- Desktop builds now cover seven targets: macOS Apple silicon and Intel, Windows x64, ARM64
+  and 32-bit, and Linux x86_64 and ARM64. The in-app update check reads the computer's
+  architecture and only offers the installer built for it.
 
 ## [0.1.7] - 2026-11-11
 
@@ -165,7 +184,8 @@ changes.
 - Assignment details now read the portal's task payload, so resources and the
   upload control are populated correctly.
 
-[Unreleased]: https://github.com/Ushio-Kasana/daymap-Client/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/Ushio-Kasana/daymap-Client/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.8
 [0.1.7]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.7
 [0.1.6]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.6
 [0.1.5]: https://github.com/Ushio-Kasana/daymap-Client/releases/tag/v0.1.5

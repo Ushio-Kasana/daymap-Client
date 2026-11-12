@@ -29,6 +29,7 @@ interface DownloadProgressEvent {
 }
 
 export type UpdatePlatform = "macos" | "windows" | "linux" | "other";
+export type UpdateArch = "aarch64" | "x86_64" | "x86" | "other";
 
 export interface UpdateProgress {
   downloaded: number;
@@ -99,6 +100,30 @@ export function currentPlatform(): UpdatePlatform {
   return "other";
 }
 
+/// The architecture Rust reported for this build, normalised to the names
+/// used in the release asset list.
+export function updateArch(value: string): UpdateArch {
+  if (value === "aarch64" || value === "arm64") return "aarch64";
+  if (value === "x86_64" || value === "x64" || value === "amd64") return "x86_64";
+  if (value === "x86" || value === "i686" || value === "i386") return "x86";
+  return "other";
+}
+
+/// Release assets carry the architecture in their name, for example
+/// `Daymap_0.1.8_aarch64.dmg` or `Daymap_0.1.8_x64-setup.exe`.
+export function assetArch(name: string): UpdateArch {
+  const lowered = name.toLowerCase();
+  if (lowered.includes("aarch64") || lowered.includes("arm64")) return "aarch64";
+  if (lowered.includes("x86_64") || lowered.includes("x64") || lowered.includes("amd64")) {
+    return "x86_64";
+  }
+  if (lowered.includes("i686") || lowered.includes("i386") || lowered.includes("ia32")) {
+    return "x86";
+  }
+  if (lowered.includes("x86")) return "x86";
+  return "other";
+}
+
 function platformExtensions(platform: UpdatePlatform): string[] {
   switch (platform) {
     case "windows":
@@ -115,9 +140,20 @@ function platformExtensions(platform: UpdatePlatform): string[] {
 function pickInstaller(
   assets: GitHubAsset[],
   platform: UpdatePlatform,
+  arch: UpdateArch,
 ): GitHubAsset | undefined {
+  // A release now ships one installer per architecture. Keep the assets built
+  // for this machine, plus any that don't name an architecture at all, and
+  // never hand an Intel Mac a silicon DMG or vice versa.
+  const candidates =
+    arch === "other"
+      ? assets
+      : assets.filter((asset) => {
+          const value = assetArch(asset.name);
+          return value === arch || value === "other";
+        });
   for (const extension of platformExtensions(platform)) {
-    const asset = assets.find((candidate) =>
+    const asset = candidates.find((candidate) =>
       candidate.name.toLowerCase().endsWith(extension),
     );
     if (asset) return asset;
@@ -152,13 +188,16 @@ export function installHint(
   }
 }
 
-function updateFromRelease(release: GitHubRelease): AvailableUpdate | null {
+function updateFromRelease(
+  release: GitHubRelease,
+  arch: UpdateArch,
+): AvailableUpdate | null {
   const tag = release.tag_name?.trim();
   if (!tag) return null;
 
   const version = tag.replace(/^v/i, "");
   const platform = currentPlatform();
-  const installer = pickInstaller(release.assets ?? [], platform);
+  const installer = pickInstaller(release.assets ?? [], platform, arch);
   const releaseUrl = release.html_url || RELEASES_PAGE;
 
   return {
@@ -176,6 +215,8 @@ function updateFromRelease(release: GitHubRelease): AvailableUpdate | null {
 
 export function useUpdater(): UpdaterController {
   const [currentVersion, setCurrentVersion] = useState(packageInfo.version);
+  const [hostArch, setHostArch] = useState<UpdateArch>("other");
+  const [archReady, setArchReady] = useState(!isTauri());
   const [checking, setChecking] = useState(false);
   const [checked, setChecked] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -198,6 +239,24 @@ export function useUpdater(): UpdaterController {
       })
       .catch(() => {
         // Fall back to the version bundled into the frontend.
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let disposed = false;
+    void invoke<string>("host_arch")
+      .then((arch) => {
+        if (!disposed) setHostArch(updateArch(arch));
+      })
+      .catch(() => {
+        // Keep the unfiltered list rather than offering the wrong installer.
+      })
+      .finally(() => {
+        if (!disposed) setArchReady(true);
       });
     return () => {
       disposed = true;
@@ -229,7 +288,7 @@ export function useUpdater(): UpdaterController {
         }
 
         const release = (await response.json()) as GitHubRelease;
-        const update = updateFromRelease(release);
+        const update = updateFromRelease(release, hostArch);
 
         if (!update) {
           throw new Error("GitHub did not return a release version.");
@@ -247,14 +306,15 @@ export function useUpdater(): UpdaterController {
         setChecking(false);
       }
     },
-    [currentVersion, downloading, opening],
+    [currentVersion, downloading, hostArch, opening],
   );
 
   useEffect(() => {
-    if (autoCheckedRef.current) return;
+    // Wait for the architecture so the first check picks the matching build.
+    if (!archReady || autoCheckedRef.current) return;
     autoCheckedRef.current = true;
     void checkForUpdates(false);
-  }, [checkForUpdates]);
+  }, [archReady, checkForUpdates]);
 
   const downloadUpdate = useCallback(async () => {
     if (!available || downloading || opening) return;

@@ -23,13 +23,13 @@ finished, add it to `CHANGELOG.md` under `[Unreleased]` and tick it off here.
 
 ## Builds and platform support
 
-- [ ] Add **Intel macOS** (`x86_64-apple-darwin`) to the release matrix alongside Apple
+- [x] Add **Intel macOS** (`x86_64-apple-darwin`) to the release matrix alongside Apple
   silicon.
-- [ ] Add **ARM64 Windows** (`aarch64-pc-windows-msvc`).
-- [ ] Add **32-bit Windows** (`i686-pc-windows-msvc`).
-- [ ] Add **ARM64 Linux** (`aarch64-unknown-linux-gnu`) alongside the existing x86_64
+- [x] Add **ARM64 Windows** (`aarch64-pc-windows-msvc`).
+- [x] Add **32-bit Windows** (`i686-pc-windows-msvc`).
+- [x] Add **ARM64 Linux** (`aarch64-unknown-linux-gnu`) alongside the existing x86_64
   Linux builds.
-- [ ] Update the build workflow, installer naming, README download table and update
+- [x] Update the build workflow, installer naming, README download table and update
   download labels for the expanded matrix.
 
 ## Features
@@ -38,7 +38,7 @@ finished, add it to `CHANGELOG.md` under `[Unreleased]` and tick it off here.
   including class notes.
 - [x] **Assignment results.** Show released results and marks for completed assignments,
   alongside the plagiarism check's similarity percentage and a link to the full report.
-- [ ] **Download timetable assignment files in the client.** Clicking an assignment file in
+- [x] **Download timetable assignment files in the client.** Clicking an assignment file in
   the timetable currently opens an external browser and can require an EdPass login. Download
   it through Daymap instead, with a progress bar. When it finishes, show a popup with options
   to open the downloaded file or its folder, plus a close button.

@@ -4,6 +4,7 @@ use crate::messages::{self, MessageError};
 use crate::models::{
     Dashboard, DaymapUser, DiaryItem, DiscoverInfo, MessageFolder, MessagePerson, StoredSession,
 };
+use crate::prefs;
 use std::future::Future;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{Datelike, NaiveDate, Utc};
@@ -462,15 +463,23 @@ pub async fn load_message_recipients(
         }
     })
     .await;
+    let keep_contacts = prefs::contacts_enabled(&app);
     match result {
-        Ok(people) => {
-            if !people.is_empty() {
+        Ok(mut people) => {
+            // Thread participants can include parents; they are not shown here.
+            cache::retain_visible(&mut people);
+            if keep_contacts && !people.is_empty() {
                 let _ = cache::record_thread_people(&app, &user, message_id, &people);
             }
             Ok(people)
         }
         Err(error) => {
-            let people = cache::thread_people(&app, &user, message_id);
+            let mut people = if keep_contacts {
+                cache::thread_people(&app, &user, message_id)
+            } else {
+                Vec::new()
+            };
+            cache::retain_visible(&mut people);
             if people.is_empty() {
                 Err(error)
             } else {
@@ -491,7 +500,15 @@ pub async fn search_contacts(
         return Ok(Vec::new());
     }
     let user = current_user(&state).ok_or_else(|| "You are not signed in.".to_string())?;
-    let local = cache::search_people(&app, &user, &term);
+    // With contact caching off, match the Daymap website: ask Daymap on every
+    // search instead of showing everyone already saved on this computer.
+    let cache_contacts = prefs::contacts_enabled(&app);
+    let mut local = if cache_contacts {
+        cache::search_people(&app, &user, &term)
+    } else {
+        Vec::new()
+    };
+    cache::retain_visible(&mut local);
     // Student and parent names only exist in cached message participants.
     // Return those immediately rather than making search depend on a slow
     // directory request that only contains staff.
@@ -507,8 +524,12 @@ pub async fn search_contacts(
     .await;
 
     match remote {
-        Ok(people) => {
-            let _ = cache::merge_people(&app, &user, &people);
+        Ok(mut people) => {
+            // Parents are never offered as recipients, cached or not.
+            cache::retain_visible(&mut people);
+            if cache_contacts {
+                let _ = cache::merge_people(&app, &user, &people);
+            }
             Ok(merge_people_results(local, people))
         }
         Err(error) => {
@@ -581,12 +602,13 @@ async fn sync_mailbox_inner(app: &AppHandle, state: &AppState) -> Result<(), Str
         return Ok(());
     }
     let known = cache::thread_ids(app, &user);
+    let include_people = prefs::contacts_enabled(app);
     let http = state.http.clone();
     let snapshot = with_authenticated(state, move |session, token| {
         let http = http.clone();
         let known = known.clone();
         async move {
-            messages::sync_mailbox(&http, &session, &token, &known).await
+            messages::sync_mailbox(&http, &session, &token, &known, include_people).await
         }
     })
     .await?;

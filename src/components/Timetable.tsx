@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { errorText, invoke, isTauri, openExternal } from "../api";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { errorText, invoke, isTauri, listen, openExternal } from "../api";
 import {
   absoluteDaymapUrl,
   addDays,
@@ -20,7 +21,7 @@ import {
   weekOf,
 } from "../dates";
 import { Icon } from "../icons";
-import type { ClassTarget, Dashboard, DiaryItem } from "../types";
+import type { AssignmentFile, ClassTarget, Dashboard, DiaryItem } from "../types";
 
 type ViewMode = "day" | "week";
 
@@ -61,6 +62,29 @@ function lessonHeading(lesson: DiaryItem): { title: string; room: string | null 
   return { title, room: null };
 }
 
+interface DownloadState {
+  fileId: number;
+  name: string;
+  downloaded: number;
+  total: number | null;
+  percent: number | null;
+}
+
+interface DownloadProgressEvent {
+  fileId: number;
+  downloaded: number;
+  total: number | null;
+}
+
+/** Daymap links can point straight at a stored file; those download in-app. */
+function fileIdFromHref(href: string): number | null {
+  const match =
+    /\/(?:api\/)?files?\/file\/(\d+)/i.exec(href) ?? /[?&]fileId=(\d+)/i.exec(href);
+  if (!match) return null;
+  const id = Number(match[1]);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
 function LessonMeta({ lesson }: { lesson: DiaryItem }) {
   const { room } = lessonHeading(lesson);
   return (
@@ -93,6 +117,10 @@ export function Timetable({ dashboard, demo, onOpenClass }: TimetableProps) {
   const fetchedWeeks = useRef<Set<string>>(new Set());
   const prefetchedPrevious = useRef(false);
   const canFetchWeeks = isTauri() && !demo;
+  const [lessonFiles, setLessonFiles] = useState<Record<number, AssignmentFile[]>>({});
+  const [download, setDownload] = useState<DownloadState | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [savedFile, setSavedFile] = useState<{ path: string; name: string } | null>(null);
 
   const selectedWeek = useMemo(() => weekOf(day), [day]);
   const selectedWeekKey = isoDate(selectedWeek[0]);
@@ -204,6 +232,108 @@ export function Timetable({ dashboard, demo, onOpenClass }: TimetableProps) {
         .sort((left, right) => lessonTime(left) - lessonTime(right)),
     [day, diary],
   );
+
+  // Lesson files come from Daymap's file list rather than the lesson text, so
+  // they can download here instead of opening a browser. Each lesson is asked
+  // once per visit; a lesson without files (or a failed request) stays empty.
+  const lessonFileIds = useMemo(
+    () =>
+      diary
+        .filter((lesson) => lessonOnDay(lesson, day) && lesson.type === 2)
+        .map((lesson) => lesson.id),
+    [day, diary],
+  );
+
+  useEffect(() => {
+    if (!canFetchWeeks) return;
+    const pending = lessonFileIds.filter((id) => !(id in lessonFiles));
+    if (pending.length === 0) return;
+    let cancelled = false;
+    void Promise.all(
+      pending.map(async (id) => {
+        try {
+          const files = await invoke<AssignmentFile[]>("load_lesson_files", {
+            eventId: id,
+          });
+          return [id, files] as const;
+        } catch {
+          return [id, [] as AssignmentFile[]] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setLessonFiles((current) => {
+        const next = { ...current };
+        for (const [id, files] of entries) next[id] = files;
+        return next;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [canFetchWeeks, lessonFileIds, lessonFiles]);
+
+  const downloadFile = async (file: AssignmentFile) => {
+    if (!isTauri() || file.id == null || download) return;
+    setDownloadError(null);
+    try {
+      const destination = await saveDialog({ defaultPath: file.name, title: "Save file" });
+      if (!destination) return;
+      setDownload({
+        fileId: file.id,
+        name: file.name,
+        downloaded: 0,
+        total: null,
+        percent: null,
+      });
+      const stop = await listen<DownloadProgressEvent>(
+        "assignment-download-progress",
+        (event) => {
+          if (event.payload.fileId !== file.id) return;
+          const total =
+            typeof event.payload.total === "number" && event.payload.total > 0
+              ? event.payload.total
+              : null;
+          setDownload((current) =>
+            current && current.fileId === file.id
+              ? {
+                  ...current,
+                  downloaded: Math.max(0, event.payload.downloaded || 0),
+                  total,
+                  percent:
+                    total === null
+                      ? null
+                      : Math.min(
+                          100,
+                          Math.round((event.payload.downloaded / total) * 100),
+                        ),
+                }
+              : current,
+          );
+        },
+      );
+      try {
+        await invoke("download_assignment_file", { fileId: file.id, destination });
+        setSavedFile({ path: destination, name: file.name });
+      } finally {
+        stop();
+      }
+    } catch (cause) {
+      setDownloadError(errorText(cause));
+    } finally {
+      setDownload(null);
+    }
+  };
+
+  const openSaved = (kind: "file" | "folder") => {
+    if (!savedFile) return;
+    void invoke(kind === "file" ? "open_downloaded_file" : "open_downloaded_folder", {
+      path: savedFile.path,
+    }).catch((cause) => {
+      setDownloadError(errorText(cause));
+      setSavedFile(null);
+    });
+  };
 
   const lessonsFor = (date: Date) =>
     diary
@@ -330,6 +460,13 @@ export function Timetable({ dashboard, demo, onOpenClass }: TimetableProps) {
         </div>
       )}
 
+      {downloadError && (
+        <div className="error-banner compact" role="alert">
+          <Icon name="warning" size={14} />
+          <span>{downloadError}</span>
+        </div>
+      )}
+
       {weekLoading && hasVisibleLessons && (
         <div className="timetable-loading-note" role="status" aria-live="polite">
           <span className="spinner" />
@@ -408,8 +545,63 @@ export function Timetable({ dashboard, demo, onOpenClass }: TimetableProps) {
               lesson={lesson}
               schoolCode={dashboard.user.schoolCode}
               onOpenClass={onOpenClass}
+              files={lessonFiles[lesson.id] ?? []}
+              download={download}
+              onDownload={(file) => void downloadFile(file)}
             />
           ))}
+        </div>
+      )}
+
+      {savedFile && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSavedFile(null);
+          }}
+        >
+          <div
+            className="modal-card confirm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="download-done-title"
+          >
+            <div className="modal-head">
+              <div>
+                <h2 id="download-done-title">Download complete</h2>
+                <p>{savedFile.name} was saved.</p>
+              </div>
+            </div>
+            <div className="modal-body">
+              <p className="download-done-path">{savedFile.path}</p>
+            </div>
+            <div className="modal-footer">
+              <span />
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setSavedFile(null)}
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => openSaved("folder")}
+                >
+                  Show in folder
+                </button>
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => openSaved("file")}
+                >
+                  Open file
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -460,10 +652,16 @@ function LessonRow({
   lesson,
   schoolCode,
   onOpenClass,
+  files,
+  download,
+  onDownload,
 }: {
   lesson: DiaryItem;
   schoolCode?: string | null;
   onOpenClass?: (target: ClassTarget) => void;
+  files: AssignmentFile[];
+  download: DownloadState | null;
+  onDownload: (file: AssignmentFile) => void;
 }) {
   const { title } = lessonHeading(lesson);
   const status = attendanceStatusForLesson(lesson);
@@ -471,6 +669,12 @@ function LessonRow({
   const tint = attendanceTint(status);
   const links = extractLinks(lesson.text);
   const canOpenClass = Boolean(onOpenClass) && lesson.type === 2;
+  const activeDownload =
+    download &&
+    (files.some((file) => file.id === download.fileId) ||
+      links.some((link) => fileIdFromHref(link.href) === download.fileId))
+      ? download
+      : null;
 
   return (
     <article className="lesson-row">
@@ -513,6 +717,31 @@ function LessonRow({
             {lesson.attendanceReason}
           </span>
         )}
+        {files.length > 0 && (
+          <div className="lesson-links">
+            {files.map((file) => {
+              const busy = download?.fileId === file.id;
+              return (
+                <button
+                  key={file.id ?? file.name}
+                  type="button"
+                  className="link-chip"
+                  title={`Download ${file.name}`}
+                  disabled={busy}
+                  onClick={() => file.id != null && onDownload(file)}
+                >
+                  <Icon name="download" size={12} />
+                  <span>{file.name}</span>
+                  {busy && (
+                    <small>
+                      {download?.percent != null ? `${download.percent}%` : "Saving…"}
+                    </small>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {links.length > 0 && (
           <div className="lesson-links">
             {links.slice(0, 3).map((link) => (
@@ -520,12 +749,36 @@ function LessonRow({
                 key={`${link.href}-${link.title}`}
                 type="button"
                 className="link-chip"
-                onClick={() => void openExternal(absoluteDaymapUrl(schoolCode, link.href))}
+                onClick={() => {
+                  const fileId = fileIdFromHref(link.href);
+                  if (fileId != null) onDownload({ id: fileId, name: link.title || "File" });
+                  else void openExternal(absoluteDaymapUrl(schoolCode, link.href));
+                }}
               >
                 <Icon name="link" size={12} />
                 <span>{link.title}</span>
               </button>
             ))}
+          </div>
+        )}
+        {activeDownload && (
+          <div className="lesson-download" role="status" aria-live="polite">
+            <span className="lesson-download-label">
+              Saving {activeDownload.name}
+              {activeDownload.percent != null ? ` · ${activeDownload.percent}%` : "…"}
+            </span>
+            {activeDownload.percent != null && (
+              <div
+                className="update-progress"
+                role="progressbar"
+                aria-label="Download progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={activeDownload.percent}
+              >
+                <span style={{ width: `${activeDownload.percent}%` }} />
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -85,6 +85,14 @@ pub struct MessagePerson {
     pub type_label: String,
 }
 
+impl MessagePerson {
+    /// Parent contacts are not shown anywhere in the client, whether they come
+    /// from the directory or from a message thread.
+    pub fn is_parent(&self) -> bool {
+        self.type_label == "Parent"
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiaryItem {
